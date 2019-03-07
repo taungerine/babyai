@@ -1,0 +1,149 @@
+# BabyAI Platform
+
+[![Build Status](https://travis-ci.org/mila-udem/babyai.svg?branch=master)](https://travis-ci.org/mila-udem/babyai)
+
+A platform for simulating language learning with a human in the loop. This is a on-going research project based at [Mila](https://mila.quebec/en/).
+
+## Installation
+
+Requirements:
+- Python 3.5+
+- OpenAI Gym
+- NumPy
+- PyQT5
+- PyTorch 0.4.1+
+
+Start by manually installing PyTorch. See the [PyTorch website](http://pytorch.org/)
+for installation instructions specific to your platform.
+
+Then, clone this repository and install the other dependencies with `pip3`:
+
+```
+git clone https://github.com/mila-udem/babyai.git
+cd babyai
+pip3 install --process-dependency-links --editable .
+```
+
+### Installation using Conda (Alternative Method)
+
+If you are using conda, you can create a `babyai` environment with all the dependencies by running:
+
+```
+conda env create -f environment.yaml
+```
+
+Having done that, install this repository in the conda environment using the command above.
+
+### Docker Container
+
+A prebuilt docker image is available [on Docker Hub](https://hub.docker.com/r/maximecb/babyai/). You can download this image by executing:
+
+```
+docker pull maximecb/babyai
+```
+
+You should run the image with `nvidia-docker` (which allows you to use CUDA):
+
+```
+nvidia-docker run -it maximecb/babyai bash
+```
+
+Pretrained IL and RL models can be found in the `models` directory of the image.
+
+### Demonstration Dataset
+
+**NOTE 2018-10-18:** we are in the process of improving the heuristic agent (bot) and will be releasing a new dataset of higher-quality demonstrations soon.
+
+Generating demonstrations takes a sizeable amount of computational resources. A gzipped archive containing the demonstrations used for the ICLR 2019 submission is [available here](http://lisaweb.iro.umontreal.ca/transfert/lisa/users/chevalma/iclr19-demos.tar.gz) (14GB download).
+
+## Structure of the Codebase
+
+In `babyai`:
+- `levels` contains the code for all levels
+- `bot.py` is a heuristic stack-based bot that can solve all levels
+- `imitation.py` is an imitation learning implementation
+- `rl` contains an implementation of the Proximal Policy Optimization (PPO) RL algorithm
+- `model.py` contains the neural network code
+
+In `scripts`:
+- use `train_il.py` to train an agent with imitation learning, using demonstrations from the bot, from another agent or even provided by a human
+- use `train_rl.py` to train an agent with reinforcement learning
+- use `make_agent_demos.py` to generate demonstrations with the bot or with another agent
+- use `make_human_demos.py` to make and save human demonstrations
+- use `train_intelligent_expert.py` to train an agent with an interactive imitation learning algorithm that incrementally grows the training set by adding demonstrations for the missions that the agent currently fails
+- use `evaluate.py` to evaluate a trained agent
+- use `enjoy.py` to visualze an agent's behavior
+- use `gui.py` or `test_mission_gen.py` to see example missions from BabyAI levels
+
+## Usage
+
+To run the interactive GUI application that illustrates the platform:
+
+```
+scripts/gui.py
+```
+
+The level being run can be selected with the `--env-name` option, eg:
+
+```
+scripts/gui.py --env-name BabyAI-UnlockPickup-v0
+```
+
+### Training
+
+To train an RL agent run e.g.
+
+```
+scripts/train_rl.py --env BabyAI-GoToLocal-v0
+```
+
+Folders `logs/` and `models/` will be created in the current directory. The default name
+for the model is chosen based on the level name, the current time and the other settings (e.g.
+`BabyAI-GoToLocal-v0_ppo_expert_filmcnn_gru_mem_seed1_18-10-12-12-45-02`). You can also choose the model
+name by setting `--model`. After 5 hours of training you should be getting a success rate of 97-99\%.
+A machine readable log can be found in `logs/<MODEL>/log.csv`, a human readable in `logs/<MODEL>/log.log`.
+
+To train an agent with imitation learning first make sure that you have your demonstrations in
+`demos/<DEMOS>`. Then run e.g.
+
+```
+scripts/train_il.py --env BabyAI-GoToLocal-v0 --demos <DEMOS>
+```
+
+In the example above we run scripts from the root of the repository, but if you have installed BabyAI as
+described above, you can also run all scripts with commands like `<PATH-TO-BABYAI-REPO>/scripts/train_il.py`.
+
+### Evaluation
+
+In the same directory where you trained your model run e.g.
+
+```
+scripts/evaluate.py --env BabyAI-GoToLocal-v0 --model <MODEL>
+```
+
+to evaluate the performance of your model named `<MODEL>` on 1000 episodes. If you want to see
+your agent performing, run
+
+```
+scripts/enjoy.py --env BabyAI-GoToLocal-v0 --model <MODEL>
+```
+
+### The Levels
+
+Documentation for the ICLR19 levels can be found in
+[docs/iclr19_levels.md](docs/iclr19_levels.md).
+There are also older levels documented in
+[docs/bonus_levels.md](docs/bonus_levels.md).
+
+### Troubleshooting
+
+If you run into error messages relating to OpenAI gym or PyQT, it may be that the version of those libraries that you have installed is incompatible. You can try upgrading specific libraries with pip3, eg: `pip3 install --upgrade gym`. If the problem persists, please [open an issue](https://github.com/mila-udem/babyai/issues) on this repository and paste a *complete* error message, along with some information about your platform (are you running Windows, Mac, Linux? Are you running this on a Mila machine?).
+
+## Instructions for Committers
+
+To contribute to this project, you should first create your own fork, and remember to periodically [sync changes from this repository](https://stackoverflow.com/questions/7244321/how-do-i-update-a-github-forked-repository). You can then create [pull requests](https://yangsu.github.io/pull-request-tutorial/) for modifications you have made. Your changes will be tested and reviewed before they are merged into this repository. If you are not familiar with forks and pull requests, we recommend doing a Google or YouTube search to find many useful tutorials on the topic.
+
+## About this Project
+
+BabyAI is an open-ended grounded language acquisition effort at [Mila](https://mila.quebec/en/). The current BabyAI platform was designed to study data-effiency of existing methods under the assumption that a human provides all teaching signals
+(i.e. demonstrations, rewards, etc.). For more information, see the paper (http://arxiv.org/abs/1810.08272).
