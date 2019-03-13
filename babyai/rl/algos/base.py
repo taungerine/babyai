@@ -142,6 +142,9 @@ class BaseAlgo(ABC):
         self.log_return1          = [0] * self.num_procs
         self.log_reshaped_return1 = [0] * self.num_procs
         self.log_num_frames1      = [0] * self.num_procs
+        
+        self.been_done0 = torch.zeros(self.num_procs, device=self.device)
+        self.been_done1 = torch.zeros(self.num_procs, device=self.device)
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -172,20 +175,20 @@ class BaseAlgo(ABC):
             preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
             
             with torch.no_grad():
-                model_results0     = self.acmodel0(preprocessed_obs0, self.memory0 * self.mask0.unsqueeze(1), msg=self.msg1)
+                model_results0     = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1), msg=(self.msg1.transpose(0, 1) * self.mask0.unsqueeze(1).unsqueeze(2)).transpose(0, 1))
                 dist0              = model_results0['dist']
                 value0             = model_results0['value']
                 memory0            = model_results0['memory']
                 msg0               = model_results0['message']
                 extra_predictions0 = model_results0['extra_predictions']
             
-                model_results1     = self.acmodel1(preprocessed_obs1, self.memory1 * self.mask1.unsqueeze(1), msg=self.msg0)
+                model_results1     = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(self.msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))
                 dist1              = model_results1['dist']
                 value1             = model_results1['value']
                 memory1            = model_results1['memory']
                 msg1               = model_results1['message']
                 extra_predictions1 = model_results1['extra_predictions']
-
+            
             #state = torch.get_rng_state()
             action0 = dist0.sample()
             
@@ -195,10 +198,26 @@ class BaseAlgo(ABC):
             obs0, reward0, done0, env_info0 = self.env0.step(action0.cpu().numpy())
             
             obs1, reward1, done1, env_info1 = self.env1.step(action1.cpu().numpy())
-
-            reward0 = tuple(0.5*r0 + 0.5*r1 for r0, r1 in zip(reward0, reward1))
             
+            # mask any rewards based on (previous) been_done
+            rewardos0 = [0] * self.num_procs
+            rewardos1 = [0] * self.num_procs
+            for j in range(self.num_procs):
+                rewardos0[j] = reward0[j] * (1 - self.been_done0[j].item())
+                rewardos1[j] = reward1[j] * (1 - self.been_done1[j].item())
+            
+            reward0 = tuple(rewardos0)
+            reward1 = tuple(rewardos1)
+            
+            reward0 = tuple(0.5*r0 + 0.5*r1 for r0, r1 in zip(reward0, reward1))
             reward1 = reward0
+            
+            self.been_done0 = (1 - (1 - self.been_done0) * (1 - torch.tensor(done0, device=self.device, dtype=torch.float)))
+            self.been_done1 = (1 - (1 - self.been_done1) * (1 - torch.tensor(done1, device=self.device, dtype=torch.float)))
+            both_done       = self.been_done0 * self.been_done1
+            
+            obs0 = self.env0.sync_reset(both_done, obs0)
+            obs1 = self.env1.sync_reset(both_done, obs1)
             
             if self.aux_info:
                 env_info0 = self.aux_info_collector0.process(env_info0)
@@ -228,7 +247,8 @@ class BaseAlgo(ABC):
             self.msg1     = msg1
 
             self.masks0[i]   = self.mask0
-            self.mask0       = 1 - torch.tensor(done0, device=self.device, dtype=torch.float)
+            #self.mask0       = 1 - torch.tensor(done0, device=self.device, dtype=torch.float)
+            self.mask0       = 1 - both_done
             self.actions0[i] = action0
             self.values0[i]  = value0
             if self.reshape_reward is not None:
@@ -241,7 +261,8 @@ class BaseAlgo(ABC):
             self.log_probs0[i] = dist0.log_prob(action0)
             
             self.masks1[i]   = self.mask1
-            self.mask1       = 1 - torch.tensor(done1, device=self.device, dtype=torch.float)
+            #self.mask1       = 1 - torch.tensor(done1, device=self.device, dtype=torch.float)
+            self.mask1       = 1 - both_done
             self.actions1[i] = action1
             self.values1[i]  = value1
             if self.reshape_reward is not None:
@@ -268,20 +289,26 @@ class BaseAlgo(ABC):
             
             self.log_episode_num_frames0 += torch.ones(self.num_procs, device=self.device)
             self.log_episode_num_frames1 += torch.ones(self.num_procs, device=self.device)
-
-            for i, done_ in enumerate(done0):
-                if done_:
+            
+            #for i, done_ in enumerate(done0):
+            for i in range(self.num_procs):
+                #if done_:
+                if both_done[i]:
                     self.log_done_counter0 += 1
                     self.log_return0.append(self.log_episode_return0[i].item())
                     self.log_reshaped_return0.append(self.log_episode_reshaped_return0[i].item())
                     self.log_num_frames0.append(self.log_episode_num_frames0[i].item())
             
-            for i, done_ in enumerate(done1):
-                if done_:
+            #for i, done_ in enumerate(done1):
+                #if done_:
                     self.log_done_counter1 += 1
                     self.log_return1.append(self.log_episode_return1[i].item())
                     self.log_reshaped_return1.append(self.log_episode_reshaped_return1[i].item())
                     self.log_num_frames1.append(self.log_episode_num_frames1[i].item())
+
+            # if both are done, reset both to not done
+            self.been_done0 *= (1 - both_done)
+            self.been_done1 *= (1 - both_done)
 
             self.log_episode_return0          *= self.mask0
             self.log_episode_reshaped_return0 *= self.mask0
@@ -297,9 +324,9 @@ class BaseAlgo(ABC):
         preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
         
         with torch.no_grad():
-            next_value0 = self.acmodel0(preprocessed_obs0, self.memory0 * self.mask0.unsqueeze(1), msg=self.msg1)['value']
+            next_value0 = self.acmodel1(preprocessed_obs0, self.memory0 * self.mask0.unsqueeze(1), msg=(self.msg1.transpose(0, 1) * self.mask0.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value']
         
-            next_value1 = self.acmodel1(preprocessed_obs1, self.memory1 * self.mask1.unsqueeze(1), msg=self.msg0)['value']
+            next_value1 = self.acmodel0(preprocessed_obs1, self.memory1 * self.mask1.unsqueeze(1), msg=(self.msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask0      = self.masks0[i+1]      if i < self.num_frames_per_proc - 1 else self.mask0

@@ -101,11 +101,10 @@ class Decoder(nn.Module):
         batch_size = inputs.size()[0]
         
         h, c = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size))
-        x    = self.linear(h)
+        msg  = self.linear(h)
 
-        msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols)
         for i in range(self.max_len_msg):
-            msg[i,:,:] = nn.functional.gumbel_softmax(x[i,:,:], hard=True)
+            msg[i,:,:] = nn.functional.gumbel_softmax(msg[i,:,:], hard=True)
 
         return msg
 
@@ -347,7 +346,8 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             instr_embedding = (instr_embedding * attention[:, :, None]).sum(1)
         
         if msg is None:
-            msg = torch.zeros(self.max_len_msg, obs.image.size(0), self.num_symbols)
+            device = torch.device("cuda" if obs.instr.is_cuda else "cpu")
+            msg = torch.zeros(self.max_len_msg, obs.image.size(0), self.num_symbols, device=device)
         
         msg_embedding = self.encoder(msg)
         
@@ -385,6 +385,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             extra_predictions = dict()
 
         x = self.actor(embedding)
+        
         dist = Categorical(logits=F.log_softmax(x, dim=1))
 
         x = self.critic(embedding)

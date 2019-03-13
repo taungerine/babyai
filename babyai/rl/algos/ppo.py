@@ -109,20 +109,22 @@ class PPOAlgo(BaseAlgo):
 
                     # Compute loss
 
-                    model_results0     = self.acmodel0(sb0.obs, memory0 * sb0.mask, msg=msg1)
+                    model_results0     = self.acmodel0(sb1.obs, memory0 * sb0.mask, msg=(msg1.transpose(0, 1) * sb0.mask.unsqueeze(2)).transpose(0, 1))
+
+                    model_results1     = self.acmodel1(sb0.obs, memory1 * sb1.mask, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1))
+                    
                     dist0              = model_results0['dist']
                     value0             = model_results0['value']
                     memory0            = model_results0['memory']
                     msg0               = model_results0['message']
                     extra_predictions0 = model_results0['extra_predictions']
-
-                    model_results1     = self.acmodel1(sb1.obs, memory1 * sb1.mask, msg=msg0)
+                    
                     dist1              = model_results1['dist']
                     value1             = model_results1['value']
                     memory1            = model_results1['memory']
                     msg1               = model_results1['message']
                     extra_predictions1 = model_results1['extra_predictions']
-
+                    
                     entropy0 = dist0.entropy().mean()
                     
                     entropy1 = dist1.entropy().mean()
