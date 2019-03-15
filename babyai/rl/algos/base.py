@@ -103,13 +103,13 @@ class BaseAlgo(ABC):
         self.msg1  = torch.zeros(          self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
         self.msgs1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
 
-        self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+        self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
         if torch.cuda.is_available():
-            self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+            self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
         
-        self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+        self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
         if torch.cuda.is_available():
-            self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+            self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
         
         self.mask0              = torch.ones(shape[1], device=self.device)
         self.masks0             = torch.zeros(*shape,  device=self.device)
