@@ -106,25 +106,26 @@ class Decoder(nn.Module):
         device = torch.device("cuda" if logits.is_cuda else "cpu")
         msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols, device=device)
         
-        out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, device=device)
+        out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, dtype=torch.uint8)
         if torch.cuda.is_available():
-            out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, device=device)
+            out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
         
         for i in range(batch_size):
             if rng_states is not None:
-                torch.set_rng_state(rng_states[i].cpu().byte())
+                torch.set_rng_state(rng_states[i])
             out_rng_states[i] = torch.get_rng_state()
             if cuda_rng_states is not None:
-                torch.cuda.set_rng_state(cuda_rng_states[i].byte())
+                print("Hello.")
+                torch.cuda.set_rng_state(cuda_rng_states[i])
             if torch.cuda.is_available():
                 out_cuda_rng_states[i] = torch.cuda.get_rng_state()
             for j in range(self.max_len_msg):
                 msg[j,i,:] = nn.functional.gumbel_softmax(logits[j,i,:].unsqueeze(0)).squeeze() ### NOTE
         
         if torch.cuda.is_available():
-            return logits, logits, out_rng_states, out_cuda_rng_states
+            return logits, msg, out_rng_states, out_cuda_rng_states
         else:
-            return logits, logits, out_rng_states
+            return logits, msg, out_rng_states
 
 class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
