@@ -112,7 +112,7 @@ class Decoder(nn.Module):
         
         for i in range(batch_size):
             if rng_states is not None:
-                torch.set_rng_state(rng_states[i].cpu())
+                torch.set_rng_state(rng_states[i].cpu().byte())
             out_rng_states[i] = torch.get_rng_state()
             if cuda_rng_states is not None:
                 torch.cuda.set_rng_state(cuda_rng_states[i])
