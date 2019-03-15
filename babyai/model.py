@@ -115,7 +115,6 @@ class Decoder(nn.Module):
                 torch.set_rng_state(rng_states[i])
             out_rng_states[i] = torch.get_rng_state()
             if cuda_rng_states is not None:
-                print("Hello.")
                 torch.cuda.set_rng_state(cuda_rng_states[i])
             if torch.cuda.is_available():
                 out_cuda_rng_states[i] = torch.cuda.get_rng_state()
