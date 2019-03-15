@@ -97,16 +97,34 @@ class Decoder(nn.Module):
         self.max_len_msg    = max_len_msg
         self.num_symbols    = num_symbols
 
-    def forward(self, inputs):
+    def forward(self, inputs, rng_states=None, cuda_rng_states=None):
         batch_size = inputs.size()[0]
         
-        h, c = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size))
-        msg  = self.linear(h)
+        h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size))
+        logits = self.linear(h)
 
-        for i in range(self.max_len_msg):
-            msg[i,:,:] = nn.functional.gumbel_softmax(msg[i,:,:], hard=True)
-
-        return msg
+        device = torch.device("cuda" if logits.is_cuda else "cpu")
+        msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols, device=device)
+        
+        out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, device=device)
+        if torch.cuda.is_available():
+            out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, device=device)
+        
+        for i in range(batch_size):
+            if rng_states is not None:
+                torch.set_rng_state(rng_states[i].cpu())
+            out_rng_states[i] = torch.get_rng_state()
+            if cuda_rng_states is not None:
+                torch.cuda.set_rng_state(cuda_rng_states[i])
+            if torch.cuda.is_available():
+                out_cuda_rng_states[i] = torch.cuda.get_rng_state()
+            for j in range(self.max_len_msg):
+                msg[j,i,:] = nn.functional.gumbel_softmax(logits[j,i,:].unsqueeze(0)).squeeze() ### NOTE
+        
+        if torch.cuda.is_available():
+            return logits, msg, out_rng_states, out_cuda_rng_states
+        else:
+            return logits, msg, out_rng_states
 
 class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
@@ -332,7 +350,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def semi_memory_size(self):
         return self.memory_dim
 
-    def forward(self, obs, memory, instr_embedding=None, msg=None):
+    def forward(self, obs, memory, instr_embedding=None, msg=None, rng_states=None, cuda_rng_states=None):
         if self.use_instr and instr_embedding is None:
             instr_embedding = self._get_instr_embedding(obs.instr)
         if self.use_instr and self.lang_model == "attgru":
@@ -391,10 +409,17 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
 
-        x = self.decoder(embedding)
-        message = x
+        if torch.cuda.is_available():
+            logits, message, rng_states, cuda_rng_states = self.decoder(embedding, rng_states, cuda_rng_states)
+        else:
+            logits, message, rng_states                  = self.decoder(embedding, rng_states, cuda_rng_states)
 
-        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'extra_predictions': extra_predictions}
+        dists_speaker = Categorical(logits=F.log_softmax(logits, dim=2))
+        
+        if torch.cuda.is_available():
+            return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'cuda_rng_states': cuda_rng_states, 'extra_predictions': extra_predictions}
+        else:
+            return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'extra_predictions': extra_predictions}
 
     def _get_instr_embedding(self, instr):
         if self.lang_model == 'gru':
@@ -452,3 +477,9 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             return self.instr_bow(input)
         else:
             ValueError("Undefined instruction architecture: {}".format(self.use_instr))
+
+    def speaker_log_prob(self, dists_speaker, msg):
+        return dists_speaker.log_prob(msg.argmax(dim=2)).mean()
+
+    def speaker_entropy(self, dists_speaker):
+        return dists_speaker.entropy().mean()
