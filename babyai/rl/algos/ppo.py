@@ -29,7 +29,7 @@ class PPOAlgo(BaseAlgo):
 
         self.optimizer0 = torch.optim.Adam(self.acmodel0.parameters(), lr, (beta1, beta2), eps=adam_eps)
         
-        self.optimizer1 = torch.optim.Adam(self.acmodel1.parameters(), lr, (beta1, beta2), eps=adam_eps)
+        self.optimizer1 = torch.optim.Adam(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), lr, (beta1, beta2), eps=adam_eps)
         
         self.batch_num = 0
 
@@ -97,9 +97,9 @@ class PPOAlgo(BaseAlgo):
                 
                 memory1 = exps1.memory[inds]
                 
-                msg0 = exps0.message[inds].transpose(0, 1)
+                msg0 = exps0.message[inds]
                 
-                msg1 = exps1.message[inds].transpose(0, 1)
+                msg1 = exps1.message[inds]
 
                 for i in range(self.recurrence):
                     # Create a sub-batch of experience
@@ -108,26 +108,43 @@ class PPOAlgo(BaseAlgo):
                     sb1 = exps1[inds + i]
 
                     # Compute loss
-
-                    model_results0     = self.acmodel0(sb1.obs, memory0 * sb0.mask, msg=(msg1.transpose(0, 1) * sb0.mask.unsqueeze(2)).transpose(0, 1))
-
-                    model_results1     = self.acmodel1(sb0.obs, memory1 * sb1.mask, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1))
                     
-                    dist0              = model_results0['dist']
+                    if torch.cuda.is_available():
+                        model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states, cuda_rng_states=sb0.cuda_rng_states) ### NOTE
+                    else:
+                        model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states) ### NOTE
+                    
+                    dist0              = model_results0['dist'] ### NOTE
                     value0             = model_results0['value']
                     memory0            = model_results0['memory']
                     msg0               = model_results0['message']
+                    dists_speaker0     = model_results0['dists_speaker']
                     extra_predictions0 = model_results0['extra_predictions']
                     
+                    sb0.obs.instr     *= 0
+                    sb0.obs.image     *= 0
+                    if torch.cuda.is_available():
+                        model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, cuda_rng_states=sb1.cuda_rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
+                    else:
+                        model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
+
                     dist1              = model_results1['dist']
                     value1             = model_results1['value']
                     memory1            = model_results1['memory']
                     msg1               = model_results1['message']
+                    dists_speaker1     = model_results1['dists_speaker']
                     extra_predictions1 = model_results1['extra_predictions']
                     
                     entropy0 = dist0.entropy().mean()
                     
                     entropy1 = dist1.entropy().mean()
+                    
+                    speaker_entropy0 = self.acmodel0.speaker_entropy(dists_speaker0)
+                    
+                    speaker_ratio0       = torch.exp(self.acmodel0.speaker_log_prob(dists_speaker0, msg0) - sb0.speaker_log_prob)
+                    speaker_surr10       = speaker_ratio0 * sb0.advantage
+                    speaker_surr20       = torch.clamp(speaker_ratio0, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb0.advantage
+                    speaker_policy_loss0 = -torch.min(speaker_surr10, speaker_surr20).mean()
 
                     ratio0       = torch.exp(dist0.log_prob(sb0.action) - sb0.log_prob)
                     surr10       = ratio0 * sb0.advantage
@@ -149,7 +166,8 @@ class PPOAlgo(BaseAlgo):
                     surr21         = (value_clipped1 - sb1.returnn).pow(2)
                     value_loss1    = torch.max(surr11, surr21).mean()
 
-                    loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
+                    #loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0 ### NOTE
+                    loss0 = speaker_policy_loss0 - self.entropy_coef * speaker_entropy0 + self.value_loss_coef * value_loss0
                     
                     loss1 = policy_loss1 - self.entropy_coef * entropy1 + self.value_loss_coef * value_loss1
 
@@ -198,7 +216,7 @@ class PPOAlgo(BaseAlgo):
                 batch_loss0.backward(retain_graph=True)
                 grad_norm0 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel0.parameters(), self.max_grad_norm)
-                self.optimizer0.step()
+                #self.optimizer0.step()
                 
                 self.optimizer1.zero_grad()
                 batch_loss1.backward(retain_graph=True)

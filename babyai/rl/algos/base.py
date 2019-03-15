@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import torch
 import numpy
+import random
 
 from babyai.rl.format import default_preprocess_obss
 from babyai.rl.utils import DictList, ParallelEnv
@@ -102,21 +103,31 @@ class BaseAlgo(ABC):
         self.msg1  = torch.zeros(          self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
         self.msgs1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
 
-        self.mask0       = torch.ones(shape[1], device=self.device)
-        self.masks0      = torch.zeros(*shape,  device=self.device)
-        self.actions0    = torch.zeros(*shape,  device=self.device, dtype=torch.int)
-        self.values0     = torch.zeros(*shape,  device=self.device)
-        self.rewards0    = torch.zeros(*shape,  device=self.device)
-        self.advantages0 = torch.zeros(*shape,  device=self.device)
-        self.log_probs0  = torch.zeros(*shape,  device=self.device)
+        self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+        if torch.cuda.is_available():
+            self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, device=self.device, dtype=torch.uint8)
         
-        self.mask1       = torch.ones(shape[1], device=self.device)
-        self.masks1      = torch.zeros(*shape,  device=self.device)
-        self.actions1    = torch.zeros(*shape,  device=self.device, dtype=torch.int)
-        self.values1     = torch.zeros(*shape,  device=self.device)
-        self.rewards1    = torch.zeros(*shape,  device=self.device)
-        self.advantages1 = torch.zeros(*shape,  device=self.device)
-        self.log_probs1  = torch.zeros(*shape,  device=self.device)
+        self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+        if torch.cuda.is_available():
+            self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, device=self.device, dtype=torch.uint8)
+        
+        self.mask0              = torch.ones(shape[1], device=self.device)
+        self.masks0             = torch.zeros(*shape,  device=self.device)
+        self.actions0           = torch.zeros(*shape,  device=self.device, dtype=torch.int)
+        self.values0            = torch.zeros(*shape,  device=self.device)
+        self.rewards0           = torch.zeros(*shape,  device=self.device)
+        self.advantages0        = torch.zeros(*shape,  device=self.device)
+        self.log_probs0         = torch.zeros(*shape,  device=self.device)
+        self.speaker_log_probs0 = torch.zeros(*shape,  device=self.device)
+        
+        self.mask1              = torch.ones(shape[1], device=self.device)
+        self.masks1             = torch.zeros(*shape,  device=self.device)
+        self.actions1           = torch.zeros(*shape,  device=self.device, dtype=torch.int)
+        self.values1            = torch.zeros(*shape,  device=self.device)
+        self.rewards1           = torch.zeros(*shape,  device=self.device)
+        self.advantages1        = torch.zeros(*shape,  device=self.device)
+        self.log_probs1         = torch.zeros(*shape,  device=self.device)
+        self.speaker_log_probs1 = torch.zeros(*shape,  device=self.device)
 
         if self.aux_info:
             self.aux_info_collector0 = ExtraInfoCollector(self.aux_info, shape, self.device)
@@ -175,19 +186,32 @@ class BaseAlgo(ABC):
             preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
             
             with torch.no_grad():
-                model_results0     = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1), msg=(self.msg1.transpose(0, 1) * self.mask0.unsqueeze(1).unsqueeze(2)).transpose(0, 1))
-                dist0              = model_results0['dist']
-                value0             = model_results0['value']
-                memory0            = model_results0['memory']
-                msg0               = model_results0['message']
-                extra_predictions0 = model_results0['extra_predictions']
-            
-                model_results1     = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(self.msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))
-                dist1              = model_results1['dist']
-                value1             = model_results1['value']
-                memory1            = model_results1['memory']
-                msg1               = model_results1['message']
-                extra_predictions1 = model_results1['extra_predictions']
+                
+                model_results0     = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1)) ### NOTE
+                
+                dist0               = model_results0['dist'] ### NOTE
+                value0              = model_results0['value']
+                memory0             = model_results0['memory']
+                msg0                = model_results0['message']
+                dists_speaker0      = model_results0['dists_speaker']
+                extra_predictions0  = model_results0['extra_predictions']
+                self.rng_states0[i] = model_results0['rng_states']
+                if torch.cuda.is_available():
+                    self.cuda_rng_states0[i] = model_results0['cuda_rng_states']
+                
+                preprocessed_obs0.instr *= 0
+                preprocessed_obs0.image *= 0
+                model_results1     = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1)) ### NOTE
+                
+                dist1               = model_results1['dist']
+                value1              = model_results1['value']
+                memory1             = model_results1['memory']
+                msg1                = model_results1['message']
+                dists_speaker1      = model_results1['dists_speaker']
+                extra_predictions1  = model_results1['extra_predictions']
+                self.rng_states1[i] = model_results1['rng_states']
+                if torch.cuda.is_available():
+                    self.cuda_rng_states1[i] = model_results1['cuda_rng_states']
             
             #state = torch.get_rng_state()
             action0 = dist0.sample()
@@ -205,16 +229,22 @@ class BaseAlgo(ABC):
             for j in range(self.num_procs):
                 rewardos0[j] = reward0[j] * (1 - self.been_done0[j].item())
                 rewardos1[j] = reward1[j] * (1 - self.been_done1[j].item())
-            
+        
             reward0 = tuple(rewardos0)
             reward1 = tuple(rewardos1)
             
-            reward0 = tuple(0.5*r0 + 0.5*r1 for r0, r1 in zip(reward0, reward1))
-            reward1 = reward0
+            #reward0 = tuple(0.5*r0 + 0.5*r1 for r0, r1 in zip(reward0, reward1)) ### NOTE
+            #reward1 = reward0
+            
+            # reward sender agent (0) equally for success of receiver agent (1) ### NOTE
+            reward0 = reward1
             
             self.been_done0 = (1 - (1 - self.been_done0) * (1 - torch.tensor(done0, device=self.device, dtype=torch.float)))
             self.been_done1 = (1 - (1 - self.been_done1) * (1 - torch.tensor(done1, device=self.device, dtype=torch.float)))
             both_done       = self.been_done0 * self.been_done1
+            
+            # reset if receiver agent (1) is done ### NOTE
+            both_done = self.been_done1
             
             obs0 = self.env0.sync_reset(both_done, obs0)
             obs1 = self.env1.sync_reset(both_done, obs1)
@@ -258,7 +288,8 @@ class BaseAlgo(ABC):
                 ], device=self.device)
             else:
                 self.rewards0[i] = torch.tensor(reward0, device=self.device)
-            self.log_probs0[i] = dist0.log_prob(action0)
+            self.log_probs0[i]         = dist0.log_prob(action0)
+            self.speaker_log_probs0[i] = self.acmodel0.speaker_log_prob(dists_speaker0, msg0)
             
             self.masks1[i]   = self.mask1
             #self.mask1       = 1 - torch.tensor(done1, device=self.device, dtype=torch.float)
@@ -272,7 +303,8 @@ class BaseAlgo(ABC):
                 ], device=self.device)
             else:
                 self.rewards1[i] = torch.tensor(reward1, device=self.device)
-            self.log_probs1[i] = dist1.log_prob(action1)
+            self.log_probs1[i]         = dist1.log_prob(action1)
+            self.speaker_log_probs1[i] = self.acmodel1.speaker_log_prob(dists_speaker1, msg1)
 
             if self.aux_info:
                 self.aux_info_collector0.fill_dictionaries(i, env_info0, extra_predictions0)
@@ -324,9 +356,12 @@ class BaseAlgo(ABC):
         preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
         
         with torch.no_grad():
-            next_value0 = self.acmodel1(preprocessed_obs0, self.memory0 * self.mask0.unsqueeze(1), msg=(self.msg1.transpose(0, 1) * self.mask0.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value']
+            tmp         = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1)) ### NOTE
+            next_value0 = tmp['value']
         
-            next_value1 = self.acmodel0(preprocessed_obs1, self.memory1 * self.mask1.unsqueeze(1), msg=(self.msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value']
+            preprocessed_obs0.instr *= 0
+            preprocessed_obs0.image *= 0
+            next_value1 = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(tmp['message'].transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value'] ### NOTE
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask0      = self.masks0[i+1]      if i < self.num_frames_per_proc - 1 else self.mask0
@@ -364,9 +399,17 @@ class BaseAlgo(ABC):
         
         exps1.memory = self.memories1.transpose(0, 1).reshape(-1, *self.memories1.shape[2:])
         
-        exps0.message = self.msgs0.transpose(1, 2).reshape(-1, self.acmodel0.max_len_msg, self.acmodel0.num_symbols)
+        exps0.message = self.msgs0.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel0.max_len_msg, self.acmodel0.num_symbols)
         
-        exps1.message = self.msgs1.transpose(1, 2).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
+        exps1.message = self.msgs1.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
+        
+        exps0.rng_states = self.rng_states0.transpose(0, 1).reshape(-1, *self.rng_states0.shape[2:])
+        if torch.cuda.is_available():
+            exps0.cuda_rng_states = self.cuda_rng_states0.transpose(0, 1).reshape(-1, *self.cuda_rng_states0.shape[2:])
+        
+        exps1.rng_states = self.rng_states1.transpose(0, 1).reshape(-1, *self.rng_states1.shape[2:])
+        if torch.cuda.is_available():
+            exps1.cuda_rng_states = self.cuda_rng_states1.transpose(0, 1).reshape(-1, *self.cuda_rng_states1.shape[2:])
         
         # T x P -> P x T -> (P * T) x 1
         exps0.mask = self.masks0.transpose(0, 1).reshape(-1).unsqueeze(1)
@@ -374,19 +417,21 @@ class BaseAlgo(ABC):
         exps1.mask = self.masks1.transpose(0, 1).reshape(-1).unsqueeze(1)
 
         # for all tensors below, T x P -> P x T -> P * T
-        exps0.action    = self.actions0.transpose(0, 1).reshape(-1)
-        exps0.value     = self.values0.transpose(0, 1).reshape(-1)
-        exps0.reward    = self.rewards0.transpose(0, 1).reshape(-1)
-        exps0.advantage = self.advantages0.transpose(0, 1).reshape(-1)
-        exps0.returnn   = exps0.value + exps0.advantage
-        exps0.log_prob  = self.log_probs0.transpose(0, 1).reshape(-1)
+        exps0.action           = self.actions0.transpose(0, 1).reshape(-1)
+        exps0.value            = self.values0.transpose(0, 1).reshape(-1)
+        exps0.reward           = self.rewards0.transpose(0, 1).reshape(-1)
+        exps0.advantage        = self.advantages0.transpose(0, 1).reshape(-1)
+        exps0.returnn          = exps0.value + exps0.advantage
+        exps0.log_prob         = self.log_probs0.transpose(0, 1).reshape(-1)
+        exps0.speaker_log_prob = self.speaker_log_probs0.transpose(0, 1).reshape(-1)
         
-        exps1.action    = self.actions1.transpose(0, 1).reshape(-1)
-        exps1.value     = self.values1.transpose(0, 1).reshape(-1)
-        exps1.reward    = self.rewards1.transpose(0, 1).reshape(-1)
-        exps1.advantage = self.advantages1.transpose(0, 1).reshape(-1)
-        exps1.returnn   = exps1.value + exps1.advantage
-        exps1.log_prob  = self.log_probs1.transpose(0, 1).reshape(-1)
+        exps1.action           = self.actions1.transpose(0, 1).reshape(-1)
+        exps1.value            = self.values1.transpose(0, 1).reshape(-1)
+        exps1.reward           = self.rewards1.transpose(0, 1).reshape(-1)
+        exps1.advantage        = self.advantages1.transpose(0, 1).reshape(-1)
+        exps1.returnn          = exps1.value + exps1.advantage
+        exps1.log_prob         = self.log_probs1.transpose(0, 1).reshape(-1)
+        exps1.speaker_log_prob = self.speaker_log_probs1.transpose(0, 1).reshape(-1)
 
         if self.aux_info:
             exps0 = self.aux_info_collector0.end_collection(exps0)
