@@ -102,14 +102,18 @@ class BaseAlgo(ABC):
         
         self.msg1  = torch.zeros(          self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
         self.msgs1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
-
-        self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
-        if torch.cuda.is_available():
-            self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
         
-        self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
-        if torch.cuda.is_available():
-            self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
+        self.msgs_out0 = torch.zeros(shape[0], self.acmodel0.max_len_msg, shape[1], self.acmodel0.num_symbols, device=self.device)
+        
+        self.msgs_out1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
+
+        #self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
+        #if torch.cuda.is_available():
+        #    self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
+        
+        #self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
+        #if torch.cuda.is_available():
+        #    self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
         
         self.mask0              = torch.ones(shape[1], device=self.device)
         self.masks0             = torch.zeros(*shape,  device=self.device)
@@ -195,9 +199,9 @@ class BaseAlgo(ABC):
                 msg0                = model_results0['message']
                 dists_speaker0      = model_results0['dists_speaker']
                 extra_predictions0  = model_results0['extra_predictions']
-                self.rng_states0[i] = model_results0['rng_states']
-                if torch.cuda.is_available():
-                    self.cuda_rng_states0[i] = model_results0['cuda_rng_states']
+                #self.rng_states0[i] = model_results0['rng_states']
+                #if torch.cuda.is_available():
+                #    self.cuda_rng_states0[i] = model_results0['cuda_rng_states']
                 
                 preprocessed_obs0.instr *= 0
                 preprocessed_obs0.image *= 0
@@ -209,9 +213,9 @@ class BaseAlgo(ABC):
                 msg1                = model_results1['message']
                 dists_speaker1      = model_results1['dists_speaker']
                 extra_predictions1  = model_results1['extra_predictions']
-                self.rng_states1[i] = model_results1['rng_states']
-                if torch.cuda.is_available():
-                    self.cuda_rng_states1[i] = model_results1['cuda_rng_states']
+                #self.rng_states1[i] = model_results1['rng_states']
+                #if torch.cuda.is_available():
+                #    self.cuda_rng_states1[i] = model_results1['cuda_rng_states']
             
             #state = torch.get_rng_state()
             action0 = dist0.sample()
@@ -275,6 +279,10 @@ class BaseAlgo(ABC):
             
             self.msgs1[i] = self.msg1
             self.msg1     = msg1
+            
+            self.msgs_out0[i] = msg0
+            
+            self.msgs_out1[i] = msg1
 
             self.masks0[i]   = self.mask0
             #self.mask0       = 1 - torch.tensor(done0, device=self.device, dtype=torch.float)
@@ -403,13 +411,17 @@ class BaseAlgo(ABC):
         
         exps1.message = self.msgs1.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
         
-        exps0.rng_states = self.rng_states0.transpose(0, 1).reshape(-1, *self.rng_states0.shape[2:])
-        if torch.cuda.is_available():
-            exps0.cuda_rng_states = self.cuda_rng_states0.transpose(0, 1).reshape(-1, *self.cuda_rng_states0.shape[2:])
+        exps0.message_out = self.msgs_out0.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel0.max_len_msg, self.acmodel0.num_symbols)
         
-        exps1.rng_states = self.rng_states1.transpose(0, 1).reshape(-1, *self.rng_states1.shape[2:])
-        if torch.cuda.is_available():
-            exps1.cuda_rng_states = self.cuda_rng_states1.transpose(0, 1).reshape(-1, *self.cuda_rng_states1.shape[2:])
+        exps1.message_out = self.msgs_out1.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
+        
+        #exps0.rng_states = self.rng_states0.transpose(0, 1).reshape(-1, *self.rng_states0.shape[2:])
+        #if torch.cuda.is_available():
+        #    exps0.cuda_rng_states = self.cuda_rng_states0.transpose(0, 1).reshape(-1, *self.cuda_rng_states0.shape[2:])
+        
+        #exps1.rng_states = self.rng_states1.transpose(0, 1).reshape(-1, *self.rng_states1.shape[2:])
+        #if torch.cuda.is_available():
+        #    exps1.cuda_rng_states = self.cuda_rng_states1.transpose(0, 1).reshape(-1, *self.cuda_rng_states1.shape[2:])
         
         # T x P -> P x T -> (P * T) x 1
         exps0.mask = self.masks0.transpose(0, 1).reshape(-1).unsqueeze(1)

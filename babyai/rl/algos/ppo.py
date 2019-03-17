@@ -109,10 +109,12 @@ class PPOAlgo(BaseAlgo):
 
                     # Compute loss
                     
-                    if torch.cuda.is_available():
-                        model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states, cuda_rng_states=sb0.cuda_rng_states) ### NOTE
-                    else:
-                        model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states) ### NOTE
+                    #if torch.cuda.is_available():
+                    #    model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states, cuda_rng_states=sb0.cuda_rng_states) ### NOTE
+                    #else:
+                    #    model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, rng_states=sb0.rng_states) ### NOTE
+
+                    model_results0 = self.acmodel0(sb1.obs, memory0 * sb0.mask, msg_out=sb0.message_out.transpose(0, 1))
                     
                     dist0              = model_results0['dist'] ### NOTE
                     value0             = model_results0['value']
@@ -123,10 +125,12 @@ class PPOAlgo(BaseAlgo):
                     
                     sb0.obs.instr     *= 0
                     sb0.obs.image     *= 0
-                    if torch.cuda.is_available():
-                        model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, cuda_rng_states=sb1.cuda_rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
-                    else:
-                        model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
+                    #if torch.cuda.is_available():
+                    #    model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, cuda_rng_states=sb1.cuda_rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
+                    #else:
+                    #    model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, rng_states=sb1.rng_states, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1)) ### NOTE
+                    
+                    model_results1 = self.acmodel1(sb0.obs, memory1 * sb1.mask, msg=(msg0.transpose(0, 1) * sb1.mask.unsqueeze(2)).transpose(0, 1), msg_out=sb1.message_out.transpose(0, 1)) ### NOTE
 
                     dist1              = model_results1['dist']
                     value1             = model_results1['value']
