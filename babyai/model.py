@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.distributions.categorical import Categorical
+from torch.distributions.relaxed_categorical import RelaxedOneHotCategorical
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import babyai.rl
 from babyai.rl.utils.supervised_losses import required_heads
@@ -97,34 +98,65 @@ class Decoder(nn.Module):
         self.max_len_msg    = max_len_msg
         self.num_symbols    = num_symbols
 
-    def forward(self, inputs, rng_states=None, cuda_rng_states=None):
-        batch_size = inputs.size()[0]
+    def forward(self, inputs, training, msg_hard=None, rng_states=None, cuda_rng_states=None):
+        batch_size = inputs.size(0)
         
         h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size))
         logits = self.linear(h)
 
+        #device = torch.device("cuda" if logits.is_cuda else "cpu")
+        #msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols, device=device)
+        
+        #out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, dtype=torch.uint8)
+        #if torch.cuda.is_available():
+        #    out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
+        
+        #for i in range(batch_size):
+            #if rng_states is not None:
+            #    torch.set_rng_state(rng_states[i])
+            #out_rng_states[i] = torch.get_rng_state()
+            #if cuda_rng_states is not None:
+            #    torch.cuda.set_rng_state(cuda_rng_states[i])
+            #if torch.cuda.is_available():
+            #    out_cuda_rng_states[i] = torch.cuda.get_rng_state()
+            #for j in range(self.max_len_msg):
+            #    msg[j,i,:] = nn.functional.gumbel_softmax(logits[j,i,:].unsqueeze(0)).squeeze() ### NOTE
+        
+        #for i in range(self.max_len_msg):
+        #    msg[i,:,:] = nn.functional.gumbel_softmax(logits[i,:,:]) ### NOTE
+        
+        msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
+        
+        #if torch.cuda.is_available():
+        #    return logits, msg, out_rng_states, out_cuda_rng_states
+        #else:
+        #    return logits, msg, out_rng_states
+
+        return logits, msg
+
+    def gumbel_softmax(self, logits, training, tau=1.0, msg_hard=None):
         device = torch.device("cuda" if logits.is_cuda else "cpu")
-        msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols, device=device)
         
-        out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, dtype=torch.uint8)
-        if torch.cuda.is_available():
-            out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
+        if training:
+            # Here, Gumbel sample is taken:
+            msg_dists = RelaxedOneHotCategorical(tau, logits=logits)
+            msg       = msg_dists.rsample()
+            
+            if msg_hard is None:
+                msg_hard = torch.zeros_like(msg, device=device)
+                msg_hard.scatter_(-1, torch.argmax(msg, dim=-1, keepdim=True), 1.0)
+            
+            # detach() detaches the output from the computation graph, so no gradient will be backprop'ed along this variable
+            msg = (msg_hard - msg).detach() + msg
         
-        for i in range(batch_size):
-            if rng_states is not None:
-                torch.set_rng_state(rng_states[i])
-            out_rng_states[i] = torch.get_rng_state()
-            if cuda_rng_states is not None:
-                torch.cuda.set_rng_state(cuda_rng_states[i])
-            if torch.cuda.is_available():
-                out_cuda_rng_states[i] = torch.cuda.get_rng_state()
-            for j in range(self.max_len_msg):
-                msg[j,i,:] = nn.functional.gumbel_softmax(logits[j,i,:].unsqueeze(0)).squeeze() ### NOTE
-        
-        if torch.cuda.is_available():
-            return logits, msg, out_rng_states, out_cuda_rng_states
         else:
-            return logits, msg, out_rng_states
+            if msg_hard is None:
+                msg = torch.zeros_like(logits, device=self.device)
+                msg.scatter_(-1, torch.argmax(logits, dim=-1, keepdim=True), 1.0)
+            else:
+                msg = msg_hard
+        
+        return msg
 
 class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
@@ -350,7 +382,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def semi_memory_size(self):
         return self.memory_dim
 
-    def forward(self, obs, memory, instr_embedding=None, msg=None, rng_states=None, cuda_rng_states=None):
+    def forward(self, obs, memory, instr_embedding=None, msg=None, msg_out=None, rng_states=None, cuda_rng_states=None):
         if self.use_instr and instr_embedding is None:
             instr_embedding = self._get_instr_embedding(obs.instr)
         if self.use_instr and self.lang_model == "attgru":
@@ -409,17 +441,21 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
 
-        if torch.cuda.is_available():
-            logits, message, rng_states, cuda_rng_states = self.decoder(embedding, rng_states, cuda_rng_states)
-        else:
-            logits, message, rng_states                  = self.decoder(embedding, rng_states, cuda_rng_states)
+        #if torch.cuda.is_available():
+        #    logits, message, rng_states, cuda_rng_states = self.decoder(embedding, rng_states, cuda_rng_states)
+        #else:
+        #    logits, message, rng_states                  = self.decoder(embedding, rng_states, cuda_rng_states)
+        
+        logits, message = self.decoder(embedding, self.training, msg_out)
 
         dists_speaker = Categorical(logits=F.log_softmax(logits, dim=2))
         
-        if torch.cuda.is_available():
-            return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'cuda_rng_states': cuda_rng_states, 'extra_predictions': extra_predictions}
-        else:
-            return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'extra_predictions': extra_predictions}
+        #if torch.cuda.is_available():
+        #    return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'cuda_rng_states': cuda_rng_states, 'extra_predictions': extra_predictions}
+        #else:
+        #    return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'extra_predictions': extra_predictions}
+        
+        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'extra_predictions': extra_predictions}
 
     def _get_instr_embedding(self, instr):
         if self.lang_model == 'gru':
