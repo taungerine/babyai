@@ -171,7 +171,8 @@ class PPOAlgo(BaseAlgo):
                     value_loss1    = torch.max(surr11, surr21).mean()
 
                     #loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0 ### NOTE
-                    loss0 = speaker_policy_loss0 - self.entropy_coef * speaker_entropy0 + self.value_loss_coef * value_loss0
+                    #loss0 = speaker_policy_loss0 - self.entropy_coef * speaker_entropy0 + self.value_loss_coef * value_loss0
+                    loss0 = 10*speaker_policy_loss0 - self.entropy_coef * speaker_entropy0 + self.value_loss_coef * value_loss0
                     
                     loss1 = policy_loss1 - self.entropy_coef * entropy1 + self.value_loss_coef * value_loss1
 
