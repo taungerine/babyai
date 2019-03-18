@@ -29,7 +29,7 @@ class PPOAlgo(BaseAlgo):
 
         self.optimizer0 = torch.optim.Adam(self.acmodel0.parameters(), lr, (beta1, beta2), eps=adam_eps)
         
-        self.optimizer1 = torch.optim.Adam(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), lr, (beta1, beta2), eps=adam_eps)
+        self.optimizer1 = torch.optim.Adam(self.acmodel1.parameters(), lr, (beta1, beta2), eps=adam_eps)
         
         self.batch_num = 0
 
@@ -177,9 +177,11 @@ class PPOAlgo(BaseAlgo):
 
                     # Update batch values
 
-                    batch_entropy0     += entropy0.item()
+                    #batch_entropy0     += entropy0.item() ### NOTE
+                    batch_entropy0     += speaker_entropy0.item() ### NOTE
                     batch_value0       += value0.mean().item()
-                    batch_policy_loss0 += policy_loss0.item()
+                    #batch_policy_loss0 += policy_loss0.item() ### NOTE
+                    batch_policy_loss0 += speaker_policy_loss0.item() ### NOTE
                     batch_value_loss0  += value_loss0.item()
                     batch_loss0        += loss0
                     
@@ -191,14 +193,14 @@ class PPOAlgo(BaseAlgo):
 
                     # Update memories for next epoch
 
-                    if i < self.recurrence - 1:
-                        exps0.memory[inds + i + 1] = memory0.detach()
-                        
-                        exps1.memory[inds + i + 1] = memory1.detach()
+                    #if i < self.recurrence - 1: ### NOTE
+                    #    exps0.memory[inds + i + 1] = memory0.detach()
+                    
+                    #    exps1.memory[inds + i + 1] = memory1.detach()
+                    
+                    #    exps0.message[inds + i + 1] = msg0.transpose(0, 1).detach()
             
-                        exps0.message[inds + i + 1] = msg0.transpose(0, 1).detach()
-            
-                        exps1.message[inds + i + 1] = msg1.transpose(0, 1).detach()
+                    #    exps1.message[inds + i + 1] = msg1.transpose(0, 1).detach()
 
                 # Update batch values
 
@@ -220,7 +222,7 @@ class PPOAlgo(BaseAlgo):
                 batch_loss0.backward(retain_graph=True)
                 grad_norm0 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel0.parameters(), self.max_grad_norm)
-                #self.optimizer0.step()
+                self.optimizer0.step()
                 
                 self.optimizer1.zero_grad()
                 batch_loss1.backward(retain_graph=True)
