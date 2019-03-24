@@ -79,19 +79,19 @@ class ImageBOWEmbedding(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, embedding_size, enc_dim, num_symbols):
         super().__init__()
-        self.lstm = nn.LSTM(num_symbols, enc_dim)
+        self.lstm = nn.LSTM(num_symbols, enc_dim, batch_first=True)
 
     def forward(self, inputs):
         h, c = self.lstm(inputs)
 
-        msg = h[-1, :, :]
+        msg = h[:, -1, :]
         
         return msg
 
 class Decoder(nn.Module):
     def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols):
         super().__init__()
-        self.lstm   = nn.LSTM(embedding_size, dec_dim)
+        self.lstm   = nn.LSTM(embedding_size, dec_dim, batch_first=True)
         self.linear = nn.Linear(dec_dim, num_symbols)
         
         self.embedding_size = embedding_size
@@ -101,36 +101,10 @@ class Decoder(nn.Module):
     def forward(self, inputs, training, msg_hard=None, rng_states=None, cuda_rng_states=None):
         batch_size = inputs.size(0)
         
-        h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size))
+        h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size).transpose(0, 1))
         logits = self.linear(h)
-
-        #device = torch.device("cuda" if logits.is_cuda else "cpu")
-        #msg = torch.zeros(self.max_len_msg, batch_size, self.num_symbols, device=device)
-        
-        #out_rng_states = torch.zeros(batch_size, *torch.get_rng_state().shape, dtype=torch.uint8)
-        #if torch.cuda.is_available():
-        #    out_cuda_rng_states = torch.zeros(batch_size, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
-        
-        #for i in range(batch_size):
-            #if rng_states is not None:
-            #    torch.set_rng_state(rng_states[i])
-            #out_rng_states[i] = torch.get_rng_state()
-            #if cuda_rng_states is not None:
-            #    torch.cuda.set_rng_state(cuda_rng_states[i])
-            #if torch.cuda.is_available():
-            #    out_cuda_rng_states[i] = torch.cuda.get_rng_state()
-            #for j in range(self.max_len_msg):
-            #    msg[j,i,:] = nn.functional.gumbel_softmax(logits[j,i,:].unsqueeze(0)).squeeze() ### NOTE
-        
-        #for i in range(self.max_len_msg):
-        #    msg[i,:,:] = nn.functional.gumbel_softmax(logits[i,:,:]) ### NOTE
         
         msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
-        
-        #if torch.cuda.is_available():
-        #    return logits, msg, out_rng_states, out_cuda_rng_states
-        #else:
-        #    return logits, msg, out_rng_states
 
         return logits, msg
 
@@ -397,7 +371,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         
         if msg is None:
             device = torch.device("cuda" if obs.instr.is_cuda else "cpu")
-            msg = torch.zeros(self.max_len_msg, obs.image.size(0), self.num_symbols, device=device)
+            msg = torch.zeros(obs.image.size(0), self.max_len_msg, self.num_symbols, device=device)
         
         msg_embedding = self.encoder(msg)
         
@@ -435,27 +409,15 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             extra_predictions = dict()
 
         x = self.actor(embedding)
-        
-        dist = Categorical(logits=F.log_softmax(x, dim=1))
 
+        dist = Categorical(logits=F.log_softmax(x, dim=1))
+        
         x = self.critic(embedding)
         value = x.squeeze(1)
-
-        #if torch.cuda.is_available():
-        #    logits, message, rng_states, cuda_rng_states = self.decoder(embedding, rng_states, cuda_rng_states)
-        #else:
-        #    logits, message, rng_states                  = self.decoder(embedding, rng_states, cuda_rng_states)
         
         logits, message = self.decoder(embedding, self.training, msg_out)
-
-        dists_speaker = Categorical(logits=F.log_softmax(logits, dim=2))
         
-        #if torch.cuda.is_available():
-        #    return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'cuda_rng_states': cuda_rng_states, 'extra_predictions': extra_predictions}
-        #else:
-        #    return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'rng_states': rng_states, 'extra_predictions': extra_predictions}
-        
-        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'extra_predictions': extra_predictions}
+        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'extra_predictions': extra_predictions}
 
     def _get_instr_embedding(self, instr):
         if self.lang_model == 'gru':
