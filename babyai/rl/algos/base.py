@@ -52,11 +52,11 @@ class BaseAlgo(ABC):
         """
         # Store parameters
 
-        self.env0     = ParallelEnv(envs0)
+        self.env = ParallelEnv(envs0, envs1)
+        
         self.acmodel0 = acmodel0
         self.acmodel0.train()
         
-        self.env1     = ParallelEnv(envs1)
         self.acmodel1 = acmodel1
         self.acmodel1.train()
         
@@ -84,82 +84,44 @@ class BaseAlgo(ABC):
         # Initialize experience values
 
         shape = (self.num_frames_per_proc, self.num_procs)
+        
+        self.scouting   = torch.zeros(shape[1], device=self.device, dtype=torch.uint8)
+        self.scoutings  = torch.zeros(*shape,   device=self.device, dtype=torch.uint8)
+        self.mask       = torch.ones(shape[1],  device=self.device)
+        self.masks      = torch.zeros(*shape,   device=self.device)
+        self.actions    = torch.zeros(*shape,   device=self.device, dtype=torch.int)
+        self.values     = torch.zeros(*shape,   device=self.device)
+        self.rewards    = torch.zeros(*shape,   device=self.device)
+        self.advantages = torch.zeros(*shape,   device=self.device)
+        self.log_probs  = torch.zeros(*shape,   device=self.device)
 
-        self.obs0  = self.env0.reset()
-        self.obss0 = [None]*(shape[0])
+        self.obs  = self.env.reset(self.scouting.cpu().numpy())
+        self.obss = [None]*(shape[0])
         
-        self.obs1  = self.env1.reset()
-        self.obss1 = [None]*(shape[0])
+        # now that we've started by resetting, all the environments are scouting
+        self.scouting += 1
 
-        self.memory0   = torch.zeros(shape[1], self.acmodel0.memory_size, device=self.device)
-        self.memories0 = torch.zeros(*shape,   self.acmodel0.memory_size, device=self.device)
+        self.memory   = torch.zeros(shape[1], self.acmodel0.memory_size, device=self.device)
+        self.memories = torch.zeros(*shape,   self.acmodel0.memory_size, device=self.device)
         
-        self.memory1   = torch.zeros(shape[1], self.acmodel1.memory_size, device=self.device)
-        self.memories1 = torch.zeros(*shape,   self.acmodel1.memory_size, device=self.device)
+        self.msg  = torch.zeros(shape[1], self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
+        self.msgs = torch.zeros(*shape,   self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
         
-        self.msg0  = torch.zeros(          self.acmodel0.max_len_msg, shape[1], self.acmodel0.num_symbols, device=self.device)
-        self.msgs0 = torch.zeros(shape[0], self.acmodel0.max_len_msg, shape[1], self.acmodel0.num_symbols, device=self.device)
-        
-        self.msg1  = torch.zeros(          self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
-        self.msgs1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
-        
-        self.msgs_out0 = torch.zeros(shape[0], self.acmodel0.max_len_msg, shape[1], self.acmodel0.num_symbols, device=self.device)
-        
-        self.msgs_out1 = torch.zeros(shape[0], self.acmodel1.max_len_msg, shape[1], self.acmodel1.num_symbols, device=self.device)
-
-        #self.rng_states0 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
-        #if torch.cuda.is_available():
-        #    self.cuda_rng_states0 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
-        
-        #self.rng_states1 = torch.zeros(*shape, *torch.get_rng_state().shape, dtype=torch.uint8)
-        #if torch.cuda.is_available():
-        #    self.cuda_rng_states1 = torch.zeros(*shape, *torch.cuda.get_rng_state().shape, dtype=torch.uint8)
-        
-        self.mask0              = torch.ones(shape[1], device=self.device)
-        self.masks0             = torch.zeros(*shape,  device=self.device)
-        self.actions0           = torch.zeros(*shape,  device=self.device, dtype=torch.int)
-        self.values0            = torch.zeros(*shape,  device=self.device)
-        self.rewards0           = torch.zeros(*shape,  device=self.device)
-        self.advantages0        = torch.zeros(*shape,  device=self.device)
-        self.log_probs0         = torch.zeros(*shape,  device=self.device)
-        self.speaker_log_probs0 = torch.zeros(*shape,  device=self.device)
-        
-        self.mask1              = torch.ones(shape[1], device=self.device)
-        self.masks1             = torch.zeros(*shape,  device=self.device)
-        self.actions1           = torch.zeros(*shape,  device=self.device, dtype=torch.int)
-        self.values1            = torch.zeros(*shape,  device=self.device)
-        self.rewards1           = torch.zeros(*shape,  device=self.device)
-        self.advantages1        = torch.zeros(*shape,  device=self.device)
-        self.log_probs1         = torch.zeros(*shape,  device=self.device)
-        self.speaker_log_probs1 = torch.zeros(*shape,  device=self.device)
+        self.msgs_out = torch.zeros(*shape, self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
 
         if self.aux_info:
-            self.aux_info_collector0 = ExtraInfoCollector(self.aux_info, shape, self.device)
-            self.aux_info_collector1 = ExtraInfoCollector(self.aux_info, shape, self.device)
+            self.aux_info_collector = ExtraInfoCollector(self.aux_info, shape, self.device)
 
         # Initialize log values
 
-        self.log_episode_return0          = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_reshaped_return0 = torch.zeros(self.num_procs, device=self.device)
-        
-        self.log_episode_return1          = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_reshaped_return1 = torch.zeros(self.num_procs, device=self.device)
-        
-        self.log_episode_num_frames0      = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_num_frames1      = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_return          = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_reshaped_return = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_num_frames      = torch.zeros(self.num_procs, device=self.device)
 
-        self.log_done_counter0    = 0
-        self.log_return0          = [0] * self.num_procs
-        self.log_reshaped_return0 = [0] * self.num_procs
-        self.log_num_frames0      = [0] * self.num_procs
-        
-        self.log_done_counter1    = 0
-        self.log_return1          = [0] * self.num_procs
-        self.log_reshaped_return1 = [0] * self.num_procs
-        self.log_num_frames1      = [0] * self.num_procs
-        
-        self.been_done0 = torch.zeros(self.num_procs, device=self.device)
-        self.been_done1 = torch.zeros(self.num_procs, device=self.device)
+        self.log_done_counter    = 0
+        self.log_return          = [0] * self.num_procs
+        self.log_reshaped_return = [0] * self.num_procs
+        self.log_num_frames      = [0] * self.num_procs
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -182,220 +144,133 @@ class BaseAlgo(ABC):
             reward, policy loss, value loss, etc.
 
         """
+        action = torch.zeros(self.num_procs, device=self.device, dtype=torch.long)
+        value  = torch.zeros(self.num_procs, device=self.device)
+        memory = torch.zeros(self.num_procs, self.acmodel0.memory_size, device=self.device)
+        msg    = torch.zeros(self.num_procs, self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
+        
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
-
-            preprocessed_obs0 = self.preprocess_obss(self.obs0, device=self.device)
             
-            preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
+            preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
             
             with torch.no_grad():
                 
-                model_results0     = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1)) ### NOTE
+                if torch.any(self.scouting):
+                    # blind the scout to instructions
+                    preprocessed_obs.instr[self.scouting] *= 0
+                    
+                    model_results0 = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))
                 
-                dist0               = model_results0['dist'] ### NOTE
-                value0              = model_results0['value']
-                memory0             = model_results0['memory']
-                msg0                = model_results0['message']
-                dists_speaker0      = model_results0['dists_speaker']
-                extra_predictions0  = model_results0['extra_predictions']
-                #self.rng_states0[i] = model_results0['rng_states']
-                #if torch.cuda.is_available():
-                #    self.cuda_rng_states0[i] = model_results0['cuda_rng_states']
+                if torch.any(1 - self.scouting):
+                    model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
                 
-                preprocessed_obs0.instr *= 0
-                preprocessed_obs0.image *= 0
-                model_results1     = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(msg0.transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1)) ### NOTE
-                
-                dist1               = model_results1['dist']
-                value1              = model_results1['value']
-                memory1             = model_results1['memory']
-                msg1                = model_results1['message']
-                dists_speaker1      = model_results1['dists_speaker']
-                extra_predictions1  = model_results1['extra_predictions']
-                #self.rng_states1[i] = model_results1['rng_states']
-                #if torch.cuda.is_available():
-                #    self.cuda_rng_states1[i] = model_results1['cuda_rng_states']
+                if torch.any(self.scouting):
+                    dist0                 = model_results0['dist']
+                    value[self.scouting]  = model_results0['value']
+                    memory[self.scouting] = model_results0['memory']
+                    msg[self.scouting]    = model_results0['message']
+                    
+                if torch.any(1 - self.scouting):
+                    dist1                     = model_results1['dist']
+                    value[1 - self.scouting]  = model_results1['value']
+                    memory[1 - self.scouting] = model_results1['memory']
+                    
+            if torch.any(self.scouting):
+                action0               = dist0.sample()
+                action[self.scouting] = action0
             
-            #state = torch.get_rng_state()
-            action0 = dist0.sample()
+            if torch.any(1 - self.scouting):
+                action1                   = dist1.sample()
+                action[1 - self.scouting] = action1
             
-            #torch.set_rng_state(state)
-            action1 = dist1.sample()
-
-            obs0, reward0, done0, env_info0 = self.env0.step(action0.cpu().numpy())
-            
-            obs1, reward1, done1, env_info1 = self.env1.step(action1.cpu().numpy())
-            
-            # mask any rewards based on (previous) been_done
-            rewardos0 = [0] * self.num_procs
-            rewardos1 = [0] * self.num_procs
+            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
             for j in range(self.num_procs):
-                rewardos0[j] = reward0[j] * (1 - self.been_done0[j].item())
-                rewardos1[j] = reward1[j] * (1 - self.been_done1[j].item())
-        
-            reward0 = tuple(rewardos0)
-            reward1 = tuple(rewardos1)
-            
-            #reward0 = tuple(0.5*r0 + 0.5*r1 for r0, r1 in zip(reward0, reward1)) ### NOTE
-            #reward1 = reward0
-            
-            # reward sender agent (0) equally for success of receiver agent (1) ### NOTE
-            reward0 = reward1
-            
-            self.been_done0 = (1 - (1 - self.been_done0) * (1 - torch.tensor(done0, device=self.device, dtype=torch.float)))
-            self.been_done1 = (1 - (1 - self.been_done1) * (1 - torch.tensor(done1, device=self.device, dtype=torch.float)))
-            both_done       = self.been_done0 * self.been_done1
-            
-            # reset if receiver agent (1) is done ### NOTE
-            both_done = self.been_done1
-            
-            obs0 = self.env0.sync_reset(both_done, obs0)
-            obs1 = self.env1.sync_reset(both_done, obs1)
+                if reward[j] != 0:
+                    print("BINGO: %f", reward[j])
             
             if self.aux_info:
-                env_info0 = self.aux_info_collector0.process(env_info0)
-                # env_info0 = self.process_aux_info0(env_info0)
-                
-                env_info1 = self.aux_info_collector1.process(env_info1)
-                # env_info1 = self.process_aux_info1(env_info1)
+                env_info = self.aux_info_collector.process(env_info)
 
             # Update experiences values
 
-            self.obss0[i] = self.obs0
-            self.obs0     = obs0
-            
-            self.obss1[i] = self.obs1
-            self.obs1     = obs1
+            self.obss[i] = self.obs
+            self.obs     = obs
 
-            self.memories0[i] = self.memory0
-            self.memory0      = memory0
-            
-            self.memories1[i] = self.memory1
-            self.memory1      = memory1
-            
-            self.msgs0[i] = self.msg0
-            self.msg0     = msg0
-            
-            self.msgs1[i] = self.msg1
-            self.msg1     = msg1
-            
-            self.msgs_out0[i] = msg0
-            
-            self.msgs_out1[i] = msg1
+            self.memories[i] = self.memory
+            self.memory      = memory
 
-            self.masks0[i]   = self.mask0
-            #self.mask0       = 1 - torch.tensor(done0, device=self.device, dtype=torch.float)
-            self.mask0       = 1 - both_done
-            self.actions0[i] = action0
-            self.values0[i]  = value0
+            self.masks[i]   = self.mask
+            self.mask       = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+            self.actions[i] = action
+            self.values[i]  = value
             if self.reshape_reward is not None:
-                self.rewards0[i] = torch.tensor([
+                self.rewards[i] = torch.tensor([
                     self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs0, action0, reward0, done0)
+                    for obs_, action_, reward_, done_ in zip(obs, action, reward, done)
                 ], device=self.device)
             else:
-                self.rewards0[i] = torch.tensor(reward0, device=self.device)
-            self.log_probs0[i]         = dist0.log_prob(action0)
-            self.speaker_log_probs0[i] = self.acmodel0.speaker_log_prob(dists_speaker0, msg0)
+                self.rewards[i] = torch.tensor(reward, device=self.device)
+            if torch.any(self.scouting):
+                self.log_probs[i, self.scouting]     = dist0.log_prob(action0)
+            if torch.any(1 - self.scouting):
+                self.log_probs[i, 1 - self.scouting] = dist1.log_prob(action1)
+            self.scoutings[i] = self.scouting
+
+            self.msgs[i]                 = self.msg
+            self.msg[self.scouting]      = msg[self.scouting]
+            #self.msg[1 - self.scouting]  = self.msg[1 - self.scouting] # repeat scout's message
             
-            self.masks1[i]   = self.mask1
-            #self.mask1       = 1 - torch.tensor(done1, device=self.device, dtype=torch.float)
-            self.mask1       = 1 - both_done
-            self.actions1[i] = action1
-            self.values1[i]  = value1
-            if self.reshape_reward is not None:
-                self.rewards1[i] = torch.tensor([
-                    self.reshape_reward(obs_, action_, reward_, done_)
-                    for obs_, action_, reward_, done_ in zip(obs1, action1, reward1, done1)
-                ], device=self.device)
-            else:
-                self.rewards1[i] = torch.tensor(reward1, device=self.device)
-            self.log_probs1[i]         = dist1.log_prob(action1)
-            self.speaker_log_probs1[i] = self.acmodel1.speaker_log_prob(dists_speaker1, msg1)
+            self.msgs_out[i] = msg
 
             if self.aux_info:
-                self.aux_info_collector0.fill_dictionaries(i, env_info0, extra_predictions0)
-                
-                self.aux_info_collector1.fill_dictionaries(i, env_info1, extra_predictions1)
+                self.aux_info_collector.fill_dictionaries(i, env_info, extra_predictions)
 
             # Update log values
-
-            self.log_episode_return0          += torch.tensor(reward0, device=self.device, dtype=torch.float)
-            self.log_episode_reshaped_return0 += self.rewards0[i]
             
-            self.log_episode_return1          += torch.tensor(reward1, device=self.device, dtype=torch.float)
-            self.log_episode_reshaped_return1 += self.rewards1[i]
+            self.log_episode_return          += torch.tensor(reward, device=self.device, dtype=torch.float)
+            self.log_episode_reshaped_return += self.rewards[i]
+            self.log_episode_num_frames      += torch.ones(self.num_procs, device=self.device)
             
-            self.log_episode_num_frames0 += torch.ones(self.num_procs, device=self.device)
-            self.log_episode_num_frames1 += torch.ones(self.num_procs, device=self.device)
+            for i, done_ in enumerate(done):
+                if done_ and not self.scouting[i]:
+                    self.log_done_counter += 1
+                    self.log_return.append(self.log_episode_return[i].item())
+                    self.log_reshaped_return.append(self.log_episode_reshaped_return[i].item())
+                    self.log_num_frames.append(self.log_episode_num_frames[i].item())
+
+            self.log_episode_return          *= self.mask
+            self.log_episode_reshaped_return *= self.mask
+            self.log_episode_num_frames      *= self.mask
             
-            #for i, done_ in enumerate(done0):
-            for i in range(self.num_procs):
-                #if done_:
-                if both_done[i]:
-                    self.log_done_counter0 += 1
-                    self.log_return0.append(self.log_episode_return0[i].item())
-                    self.log_reshaped_return0.append(self.log_episode_reshaped_return0[i].item())
-                    self.log_num_frames0.append(self.log_episode_num_frames0[i].item())
-            
-            #for i, done_ in enumerate(done1):
-                #if done_:
-                    self.log_done_counter1 += 1
-                    self.log_return1.append(self.log_episode_return1[i].item())
-                    self.log_reshaped_return1.append(self.log_episode_reshaped_return1[i].item())
-                    self.log_num_frames1.append(self.log_episode_num_frames1[i].item())
-
-            # if both are done, reset both to not done
-            self.been_done0 *= (1 - both_done)
-            self.been_done1 *= (1 - both_done)
-
-            self.log_episode_return0          *= self.mask0
-            self.log_episode_reshaped_return0 *= self.mask0
-            self.log_episode_num_frames0      *= self.mask0
-
-            self.log_episode_return1          *= self.mask1
-            self.log_episode_reshaped_return1 *= self.mask1
-            self.log_episode_num_frames1      *= self.mask1
+            self.scouting = self.scouting * self.mask.byte() + (1 - self.scouting) * (1 - self.mask.byte())
 
         # Add advantage and return to experiences
 
-        preprocessed_obs0 = self.preprocess_obss(self.obs0, device=self.device)
-        preprocessed_obs1 = self.preprocess_obss(self.obs1, device=self.device)
+        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
         
         with torch.no_grad():
-            tmp         = self.acmodel0(preprocessed_obs1, self.memory0 * self.mask0.unsqueeze(1)) ### NOTE
-            next_value0 = tmp['value']
-        
-            preprocessed_obs0.instr *= 0
-            preprocessed_obs0.image *= 0
-            next_value1 = self.acmodel1(preprocessed_obs0, self.memory1 * self.mask1.unsqueeze(1), msg=(tmp['message'].transpose(0, 1) * self.mask1.unsqueeze(1).unsqueeze(2)).transpose(0, 1))['value'] ### NOTE
+            next_value = torch.zeros(self.num_procs, device=self.device)
+            
+            if torch.any(self.scouting):
+                next_value[  self.scouting]   = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
+            
+            if torch.any(1 - self.scouting):
+                next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
-            next_mask0      = self.masks0[i+1]      if i < self.num_frames_per_proc - 1 else self.mask0
-            next_value0     = self.values0[i+1]     if i < self.num_frames_per_proc - 1 else next_value0
-            next_advantage0 = self.advantages0[i+1] if i < self.num_frames_per_proc - 1 else 0
-            
-            next_mask1      = self.masks1[i+1]      if i < self.num_frames_per_proc - 1 else self.mask1
-            next_value1     = self.values1[i+1]     if i < self.num_frames_per_proc - 1 else next_value1
-            next_advantage1 = self.advantages1[i+1] if i < self.num_frames_per_proc - 1 else 0
+            next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask
+            next_value     = self.values[i+1]     if i < self.num_frames_per_proc - 1 else next_value
+            next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
 
-            delta0              = self.rewards0[i] + self.discount * next_value0 * next_mask0 - self.values0[i]
-            self.advantages0[i] = delta0 + self.discount * self.gae_lambda * next_advantage0 * next_mask0
-            
-            delta1              = self.rewards1[i] + self.discount * next_value1 * next_mask1 - self.values1[i]
-            self.advantages1[i] = delta1 + self.discount * self.gae_lambda * next_advantage1 * next_mask1
+            delta              = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
+            self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
 
         # Flatten the data correctly, making sure that
         # each episode's data is a continuous chunk
 
-        exps0     = DictList()
-        exps0.obs = [self.obss0[i][j]
-                     for j in range(self.num_procs)
-                     for i in range(self.num_frames_per_proc)]
-        
-        exps1     = DictList()
-        exps1.obs = [self.obss1[i][j]
+        exps     = DictList()
+        exps.obs = [self.obss[i][j]
                      for j in range(self.num_procs)
                      for i in range(self.num_frames_per_proc)]
         
@@ -403,92 +278,49 @@ class BaseAlgo(ABC):
         # D is the dimensionality
 
         # T x P x D -> P x T x D -> (P * T) x D
-        exps0.memory = self.memories0.transpose(0, 1).reshape(-1, *self.memories0.shape[2:])
+        exps.memory      = self.memories.transpose(0, 1).reshape(-1, *self.memories.shape[2:])
         
-        exps1.memory = self.memories1.transpose(0, 1).reshape(-1, *self.memories1.shape[2:])
+        exps.message     = self.msgs.transpose(0, 1).reshape(-1, *self.msgs.shape[2:])
         
-        exps0.message = self.msgs0.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel0.max_len_msg, self.acmodel0.num_symbols)
-        
-        exps1.message = self.msgs1.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
-        
-        exps0.message_out = self.msgs_out0.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel0.max_len_msg, self.acmodel0.num_symbols)
-        
-        exps1.message_out = self.msgs_out1.transpose(1, 2).transpose(0, 1).reshape(-1, self.acmodel1.max_len_msg, self.acmodel1.num_symbols)
-        
-        #exps0.rng_states = self.rng_states0.transpose(0, 1).reshape(-1, *self.rng_states0.shape[2:])
-        #if torch.cuda.is_available():
-        #    exps0.cuda_rng_states = self.cuda_rng_states0.transpose(0, 1).reshape(-1, *self.cuda_rng_states0.shape[2:])
-        
-        #exps1.rng_states = self.rng_states1.transpose(0, 1).reshape(-1, *self.rng_states1.shape[2:])
-        #if torch.cuda.is_available():
-        #    exps1.cuda_rng_states = self.cuda_rng_states1.transpose(0, 1).reshape(-1, *self.cuda_rng_states1.shape[2:])
+        exps.message_out = self.msgs_out.transpose(0, 1).reshape(-1, *self.msgs.shape[2:])
         
         # T x P -> P x T -> (P * T) x 1
-        exps0.mask = self.masks0.transpose(0, 1).reshape(-1).unsqueeze(1)
-        
-        exps1.mask = self.masks1.transpose(0, 1).reshape(-1).unsqueeze(1)
+        exps.mask = self.masks.transpose(0, 1).reshape(-1).unsqueeze(1)
 
         # for all tensors below, T x P -> P x T -> P * T
-        exps0.action           = self.actions0.transpose(0, 1).reshape(-1)
-        exps0.value            = self.values0.transpose(0, 1).reshape(-1)
-        exps0.reward           = self.rewards0.transpose(0, 1).reshape(-1)
-        exps0.advantage        = self.advantages0.transpose(0, 1).reshape(-1)
-        exps0.returnn          = exps0.value + exps0.advantage
-        exps0.log_prob         = self.log_probs0.transpose(0, 1).reshape(-1)
-        exps0.speaker_log_prob = self.speaker_log_probs0.transpose(0, 1).reshape(-1)
-        
-        exps1.action           = self.actions1.transpose(0, 1).reshape(-1)
-        exps1.value            = self.values1.transpose(0, 1).reshape(-1)
-        exps1.reward           = self.rewards1.transpose(0, 1).reshape(-1)
-        exps1.advantage        = self.advantages1.transpose(0, 1).reshape(-1)
-        exps1.returnn          = exps1.value + exps1.advantage
-        exps1.log_prob         = self.log_probs1.transpose(0, 1).reshape(-1)
-        exps1.speaker_log_prob = self.speaker_log_probs1.transpose(0, 1).reshape(-1)
+        exps.scouting         = self.scoutings.transpose(0, 1).reshape(-1)
+        exps.action           = self.actions.transpose(0, 1).reshape(-1)
+        exps.value            = self.values.transpose(0, 1).reshape(-1)
+        exps.reward           = self.rewards.transpose(0, 1).reshape(-1)
+        exps.advantage        = self.advantages.transpose(0, 1).reshape(-1)
+        exps.returnn          = exps.value + exps.advantage
+        exps.log_prob         = self.log_probs.transpose(0, 1).reshape(-1)
 
         if self.aux_info:
-            exps0 = self.aux_info_collector0.end_collection(exps0)
-        
-            exps1 = self.aux_info_collector1.end_collection(exps1)
+            exps = self.aux_info_collector.end_collection(exps)
 
         # Preprocess experiences
 
-        exps0.obs = self.preprocess_obss(exps0.obs, device=self.device)
-
-        exps1.obs = self.preprocess_obss(exps1.obs, device=self.device)
+        exps.obs = self.preprocess_obss(exps.obs, device=self.device)
 
         # Log some values
 
-        keep0 = max(self.log_done_counter0, self.num_procs)
+        keep = max(self.log_done_counter, self.num_procs)
 
-        keep1 = max(self.log_done_counter1, self.num_procs)
-
-        log0 = {
-            "return_per_episode":          self.log_return0[-keep0:],
-            "reshaped_return_per_episode": self.log_reshaped_return0[-keep0:],
-            "num_frames_per_episode":      self.log_num_frames0[-keep0:],
+        log = {
+            "return_per_episode":          self.log_return[-keep:],
+            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
+            "num_frames_per_episode":      self.log_num_frames[-keep:],
             "num_frames":                  self.num_frames,
-            "episodes_done":               self.log_done_counter0,
+            "episodes_done":               self.log_done_counter,
         }
 
-        log1 = {
-            "return_per_episode":          self.log_return1[-keep1:],
-            "reshaped_return_per_episode": self.log_reshaped_return1[-keep1:],
-            "num_frames_per_episode":      self.log_num_frames1[-keep1:],
-            "num_frames":                  self.num_frames,
-            "episodes_done":               self.log_done_counter1,
-        }
+        self.log_done_counter    = 0
+        self.log_return          = self.log_return[-self.num_procs:]
+        self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
+        self.log_num_frames      = self.log_num_frames[-self.num_procs:]
 
-        self.log_done_counter0    = 0
-        self.log_return0          = self.log_return0[-self.num_procs:]
-        self.log_reshaped_return0 = self.log_reshaped_return0[-self.num_procs:]
-        self.log_num_frames0      = self.log_num_frames0[-self.num_procs:]
-
-        self.log_done_counter1    = 0
-        self.log_return1          = self.log_return1[-self.num_procs:]
-        self.log_reshaped_return1 = self.log_reshaped_return1[-self.num_procs:]
-        self.log_num_frames1      = self.log_num_frames1[-self.num_procs:]
-
-        return exps0, log0, exps1, log1
+        return exps, log
 
     @abstractmethod
     def update_parameters(self):
