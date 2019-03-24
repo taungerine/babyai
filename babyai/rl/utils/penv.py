@@ -1,16 +1,26 @@
 from multiprocessing import Process, Pipe
 import gym
 
-def worker(conn, env):
+def worker(conn, env0, env1):
     while True:
-        cmd, data = conn.recv()
+        cmd, scouting, action = conn.recv()
         if cmd == "step":
-            obs, reward, done, info = env.step(data)
-            #if done:
-            #    obs = env.reset()
+            if scouting:
+                obs, reward, done, info = env0.step(action)
+                if done and env0.step_count >= env0.max_steps:
+                    obs = env1.reset()
+                else:
+                    done = False
+                reward *= 0
+            else:
+                obs, reward, done, info = env1.step(action)
+                if done:
+                    obs = env0.reset()
             conn.send((obs, reward, done, info))
         elif cmd == "reset":
-            obs = env.reset()
+            if scouting:
+                env1.reset()
+            obs = env0.reset()
             conn.send(obs)
         else:
             raise NotImplementedError
@@ -18,54 +28,47 @@ def worker(conn, env):
 class ParallelEnv(gym.Env):
     """A concurrent execution of environments in multiple processes."""
 
-    def __init__(self, envs):
-        assert len(envs) >= 1, "No environment given."
+    def __init__(self, envs0, envs1):
+        assert len(envs0) >= 1, "No environment given."
 
-        self.envs = envs
-        self.observation_space = self.envs[0].observation_space
-        self.action_space = self.envs[0].action_space
+        self.envs0 = envs0
+        self.envs1 = envs1
+        self.observation_space = self.envs0[0].observation_space
+        self.action_space = self.envs0[0].action_space
 
         self.locals = []
-        for env in self.envs[1:]:
+        for env0, env1 in zip(self.envs0[1:], self.envs1[1:]):
             local, remote = Pipe()
             self.locals.append(local)
-            p = Process(target=worker, args=(remote, env))
+            p = Process(target=worker, args=(remote, env0, env1))
             p.daemon = True
             p.start()
             remote.close()
 
-    def reset(self):
-        for local in self.locals:
-            local.send(("reset", None))
-        results = [self.envs[0].reset()] + [local.recv() for local in self.locals]
+    def reset(self, scouting):
+        for local, scouting_ in zip(self.locals, scouting[1:]):
+            local.send(("reset", scouting_, None))
+        if scouting[0]:
+            self.envs1[0].reset()
+        results = [self.envs0[0].reset()] + [local.recv() for local in self.locals]
         return results
 
-    def sync_reset(self, both_done, obs):
-        if both_done[0]:
-            results = [self.envs[0].reset()]
-        else:
-            results = [obs[0]]
+    def step(self, actions, scouting):
+        for local, action, scouting_ in zip(self.locals, actions[1:], scouting[1:]):
+            local.send(("step", scouting_, action))
         
-        for i in range(len(self.locals)):
-            local = self.locals[i]
-            if both_done[i+1]:
-                local.send(("reset", None))
-        
-        for i in range(len(self.locals)):
-            local = self.locals[i]
-            if both_done[i+1]:
-                results += [local.recv()]
+        if scouting[0]:
+            obs, reward, done, info = self.envs0[0].step(actions[0])
+            if done and self.envs0[0].step_count >= self.envs0[0].max_steps:
+                obs = self.envs1[0].reset()
             else:
-                results += [obs[i+1]]
-        
-        return tuple(results)
+                done = False
+            reward *= 0
+        else:
+            obs, reward, done, info = self.envs1[0].step(actions[0])
+            if done:
+                obs = self.envs0[0].reset()
 
-    def step(self, actions):
-        for local, action in zip(self.locals, actions[1:]):
-            local.send(("step", action))
-        obs, reward, done, info = self.envs[0].step(actions[0])
-        #if done:
-        #    obs = self.envs[0].reset()
         results = zip(*[(obs, reward, done, info)] + [local.recv() for local in self.locals])
         return results
 
