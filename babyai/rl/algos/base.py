@@ -185,9 +185,6 @@ class BaseAlgo(ABC):
                 action[1 - self.scouting] = action1
             
             obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
-            for j in range(self.num_procs):
-                if reward[j] != 0:
-                    print("BINGO: %f", reward[j])
             
             if self.aux_info:
                 env_info = self.aux_info_collector.process(env_info)
