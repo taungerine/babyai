@@ -52,7 +52,8 @@ class BaseAlgo(ABC):
         """
         # Store parameters
 
-        self.env = ParallelEnv(envs0, envs1)
+        self.env = ParallelEnv(envs0, envs1) ### NOTE
+        #self.env = ParallelEnv(envs1)
         
         self.acmodel0 = acmodel0
         self.acmodel0.train()
@@ -95,7 +96,8 @@ class BaseAlgo(ABC):
         self.advantages = torch.zeros(*shape,   device=self.device)
         self.log_probs  = torch.zeros(*shape,   device=self.device)
 
-        self.obs  = self.env.reset(self.scouting.cpu().numpy())
+        self.obs  = self.env.reset(self.scouting.cpu().numpy()) ### NOTE
+        #self.obs  = self.env.reset()
         self.obss = [None]*(shape[0])
         
         # now that we've started by resetting, all the environments are scouting
@@ -184,7 +186,8 @@ class BaseAlgo(ABC):
                 action1                   = dist1.sample()
                 action[1 - self.scouting] = action1
             
-            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
+            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy()) ### NOTE
+            #obs, reward, done, env_info = self.env.step(action.cpu().numpy())
             
             if self.aux_info:
                 env_info = self.aux_info_collector.process(env_info)
@@ -250,7 +253,7 @@ class BaseAlgo(ABC):
             next_value = torch.zeros(self.num_procs, device=self.device)
             
             if torch.any(self.scouting):
-                next_value[  self.scouting]   = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
+                next_value[    self.scouting] = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
             
             if torch.any(1 - self.scouting):
                 next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']

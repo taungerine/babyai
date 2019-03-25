@@ -27,8 +27,7 @@ class PPOAlgo(BaseAlgo):
 
         assert self.batch_size % self.recurrence == 0
         
-        #self.optimizer = torch.optim.Adam(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), lr, (beta1, beta2), eps=adam_eps)
-        self.optimizer = torch.optim.Adam(self.acmodel1.parameters(), lr, (beta1, beta2), eps=adam_eps)
+        self.optimizer = torch.optim.Adam(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), lr, (beta1, beta2), eps=adam_eps)
         
         self.batch_num = 0
 
@@ -93,9 +92,6 @@ class PPOAlgo(BaseAlgo):
                     # Compute loss
                     
                     if torch.any(sb.scouting):
-                        # blind the scout to instructions
-                        sb.obs.instr *= 0
-                        
                         model_results0 = self.acmodel0(sb.obs[    sb.scouting], memory[    sb.scouting] * sb.mask[    sb.scouting], msg_out=sb.message_out[sb.scouting])
                     
                     if torch.any(1 - sb.scouting):
@@ -161,10 +157,12 @@ class PPOAlgo(BaseAlgo):
                 
                 self.optimizer.zero_grad()
                 batch_loss.backward(retain_graph=True)
-                grad_norm = sum(p.grad.data.norm(2) ** 2 for p in list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()) if p.grad is not None) ** 0.5
-                torch.nn.utils.clip_grad_norm_(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), self.max_grad_norm)
+                grad_norm = sum(p.grad.data.norm(2) ** 2 for p in list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()) if p.grad is not None) ** 0.5 ### NOTE
+                #torch.nn.utils.clip_grad_norm_(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), self.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.acmodel0.parameters(), self.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(self.acmodel1.parameters(), self.max_grad_norm)
                 self.optimizer.step()
-
+                
                 # Update log values
 
                 log_entropies.append(batch_entropy)
