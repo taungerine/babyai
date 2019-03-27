@@ -52,8 +52,7 @@ class BaseAlgo(ABC):
         """
         # Store parameters
 
-        self.env = ParallelEnv(envs0, envs1) ### NOTE
-        #self.env = ParallelEnv(envs1)
+        self.env = ParallelEnv(envs0, envs1)
         
         self.acmodel0 = acmodel0
         self.acmodel0.train()
@@ -96,8 +95,7 @@ class BaseAlgo(ABC):
         self.advantages = torch.zeros(*shape,   device=self.device)
         self.log_probs  = torch.zeros(*shape,   device=self.device)
 
-        self.obs  = self.env.reset(self.scouting.cpu().numpy()) ### NOTE
-        #self.obs  = self.env.reset()
+        self.obs  = self.env.reset(self.scouting.cpu().numpy())
         self.obss = [None]*(shape[0])
         
         # now that we've started by resetting, all the environments are scouting
@@ -186,12 +184,11 @@ class BaseAlgo(ABC):
                 action1                   = dist1.sample()
                 action[1 - self.scouting] = action1
             
-            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy()) ### NOTE
-            #obs, reward, done, env_info = self.env.step(action.cpu().numpy())
+            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
             
             if self.aux_info:
                 env_info = self.aux_info_collector.process(env_info)
-
+                            
             # Update experiences values
 
             self.obss[i] = self.obs
