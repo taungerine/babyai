@@ -106,7 +106,7 @@ class Decoder(nn.Module):
         
         msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
 
-        return logits, msg
+        return logits, logits ### NOTE
 
     def gumbel_softmax(self, logits, training, tau=1.0, msg_hard=None):
         device = torch.device("cuda" if logits.is_cuda else "cpu")
