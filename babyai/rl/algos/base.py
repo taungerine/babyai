@@ -149,6 +149,9 @@ class BaseAlgo(ABC):
         memory = torch.zeros(self.num_procs, self.acmodel0.memory_size, device=self.device)
         msg    = torch.zeros(self.num_procs, self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
         
+        obs_mask = torch.zeros(1, 7, 7, 3, device=self.device) ### NOTE
+        obs_mask[:, 2:5, 5:7, :] = 1 ### NOTE
+        
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
             
@@ -163,6 +166,9 @@ class BaseAlgo(ABC):
                     model_results0 = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))
                 
                 if torch.any(1 - self.scouting):
+                    # limit solver's field of view
+                    preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
+                    
                     model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
                 
                 if torch.any(self.scouting):
@@ -250,9 +256,15 @@ class BaseAlgo(ABC):
             next_value = torch.zeros(self.num_procs, device=self.device)
             
             if torch.any(self.scouting):
+                # blind the scout to instructions
+                preprocessed_obs.instr[self.scouting] *= 0
+                
                 next_value[    self.scouting] = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
             
             if torch.any(1 - self.scouting):
+                # limit solver's field of view
+                preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
+                
                 next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):

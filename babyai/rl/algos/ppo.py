@@ -47,6 +47,9 @@ class PPOAlgo(BaseAlgo):
         being the added information. They are either (n_procs * n_frames_per_proc) 1D tensors or
         (n_procs * n_frames_per_proc) x k 2D tensors where k is the number of classes for multiclass classification
         '''
+        
+        obs_mask = torch.zeros(1, 7, 7, 3, device=self.device) ### NOTE
+        obs_mask[:, 2:5, 5:7, :] = 1 ### NOTE
 
         for _ in range(self.epochs):
             # Initialize log values
@@ -92,9 +95,15 @@ class PPOAlgo(BaseAlgo):
                     # Compute loss
                     
                     if torch.any(sb.scouting):
+                        # blind the scout to instructions
+                        sb.obs.instr[sb.scouting] *= 0
+                        
                         model_results0 = self.acmodel0(sb.obs[    sb.scouting], memory[    sb.scouting] * sb.mask[    sb.scouting], msg_out=sb.message_out[sb.scouting])
                     
                     if torch.any(1 - sb.scouting):
+                        # limit solver's field of view
+                        sb.obs.image[1 - sb.scouting] *= obs_mask ### NOTE
+                        
                         model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
                     
                     if torch.any(sb.scouting):
