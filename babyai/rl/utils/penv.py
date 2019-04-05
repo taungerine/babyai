@@ -1,26 +1,52 @@
 from multiprocessing import Process, Pipe
 import gym
 
+def get_global(env):
+    # get global view
+    grid = env.grid
+    
+    # position agent
+    x, y = env.start_pos
+    
+    # rotate to match agent's orientation
+    for i in range(env.agent_dir + 1):
+        # rotate grid
+        grid = grid.rotate_left()
+        
+        # rotate position of agent
+        x_new = y
+        y_new = grid.height - 1 - x
+        x     = x_new
+        y     = y_new
+    
+    # encode image for model
+    image = grid.encode()
+
+    # indicate position of agent
+    image[x, y, 0] = 255
+    
+    return image[1:, 1:, :]
+
 def worker(conn, env0, env1):
     while True:
         cmd, scouting, action = conn.recv()
         if cmd == "step":
             if scouting:
                 obs, reward, done, info = env0.step(action)
-                if done and env0.step_count >= env0.max_steps:
-                    obs = env1.reset()
-                else:
-                    done = False
+                obs = env1.reset()
+                done = True
                 reward *= 0
             else:
                 obs, reward, done, info = env1.step(action)
                 if done:
                     obs = env0.reset()
+                    obs['image'] = get_global(env0)
             conn.send((obs, reward, done, info))
         elif cmd == "reset":
             if scouting:
                 env1.reset()
             obs = env0.reset()
+            obs['image'] = get_global(env0)
             conn.send(obs)
         else:
             raise NotImplementedError
@@ -50,7 +76,9 @@ class ParallelEnv(gym.Env):
             local.send(("reset", scouting_, None))
         if scouting[0]:
             self.envs1[0].reset()
-        results = [self.envs0[0].reset()] + [local.recv() for local in self.locals]
+        result0 = self.envs0[0].reset()
+        result0['image'] = get_global(self.envs0[0])
+        results = [result0] + [local.recv() for local in self.locals]
         return results
 
     def step(self, actions, scouting):
@@ -59,15 +87,14 @@ class ParallelEnv(gym.Env):
         
         if scouting[0]:
             obs, reward, done, info = self.envs0[0].step(actions[0])
-            if done and self.envs0[0].step_count >= self.envs0[0].max_steps:
-                obs = self.envs1[0].reset()
-            else:
-                done = False
+            obs = self.envs1[0].reset()
+            done = True
             reward *= 0
         else:
             obs, reward, done, info = self.envs1[0].step(actions[0])
             if done:
                 obs = self.envs0[0].reset()
+                obs['image'] = get_global(self.envs0[0])
 
         results = zip(*[(obs, reward, done, info)] + [local.recv() for local in self.locals])
         return results
