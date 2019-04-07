@@ -50,6 +50,8 @@ parser.add_argument("--enc-dim", type=int, default=128,
                     help="dimensionality of the encoder LSTM")
 parser.add_argument("--dec-dim", type=int, default=128,
                     help="dimensionality of the decoder LSTM")
+parser.add_argument("--no-comm", action="store_true", default=False,
+                    help="don't use communication")
 args = parser.parse_args()
 
 utils.seed(args.seed)
@@ -133,7 +135,7 @@ if args.algo == "ppo":
                               args.gae_lambda,
                               args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                               args.optim_eps, args.clip_eps, args.ppo_epochs, args.batch_size, obss_preprocessor,
-                              reshape_reward)
+                              reshape_reward, not args.no_comm)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
