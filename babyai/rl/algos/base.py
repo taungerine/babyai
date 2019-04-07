@@ -12,7 +12,7 @@ class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs0, envs1, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, aux_info):
+                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, aux_info):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -70,6 +70,7 @@ class BaseAlgo(ABC):
         self.recurrence          = recurrence
         self.preprocess_obss     = preprocess_obss or default_preprocess_obss
         self.reshape_reward      = reshape_reward
+        self.use_comm            = use_comm
         self.aux_info            = aux_info
 
         # Store helpers values
@@ -169,7 +170,10 @@ class BaseAlgo(ABC):
                     # limit solver's field of view
                     preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
                     
-                    model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
+                    if self.use_comm:
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
+                    else:
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
                 
                 if torch.any(self.scouting):
                     dist0                 = model_results0['dist']
@@ -265,7 +269,10 @@ class BaseAlgo(ABC):
                 # limit solver's field of view
                 preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
                 
-                next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                if self.use_comm:
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                else:
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask

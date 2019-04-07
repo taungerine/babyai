@@ -14,11 +14,11 @@ class PPOAlgo(BaseAlgo):
                  gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
                  adam_eps=1e-5, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
-                 reshape_reward=None, aux_info=None):
+                 reshape_reward=None, use_comm=True, aux_info=None):
         num_frames_per_proc = num_frames_per_proc or 128
 
         super().__init__(envs0, envs1, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward,
+                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm,
                          aux_info)
 
         self.clip_eps = clip_eps
@@ -104,7 +104,10 @@ class PPOAlgo(BaseAlgo):
                         # limit solver's field of view
                         sb.obs.image[1 - sb.scouting] *= obs_mask ### NOTE
                         
-                        model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                        if self.use_comm:
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                        else:
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting])
                     
                     if torch.any(sb.scouting):
                         dist0               = model_results0['dist']
