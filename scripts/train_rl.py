@@ -220,7 +220,7 @@ logger1.info(acmodel1)
 total_start_time  = time.time()
 best_success_rate = 0
 test_env_name     = args.env
-while status['num_frames'] < 7680000: #args.frames:
+while status['num_frames'] < args.frames:
     # Update parameters
     
     update_start_time = time.time()
