@@ -136,7 +136,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
                  image_dim=128, memory_dim=128, instr_dim=128, enc_dim=128, dec_dim=128,
                  use_instr=False, lang_model="gru", use_memory=False, arch="cnn1",
-                 max_len_msg=16, num_symbols=2, aux_info=None):
+                 max_len_msg=16, num_symbols=2, all_angles=False, aux_info=None):
         super().__init__()
 
         # Decide which components are enabled
@@ -152,6 +152,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.dec_dim     = dec_dim
         self.max_len_msg = max_len_msg
         self.num_symbols = num_symbols
+        self.all_angles  = all_angles
 
         self.obs_space = obs_space
 
@@ -371,11 +372,22 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         
         if msg is None:
             device = torch.device("cuda" if obs.instr.is_cuda else "cpu")
-            msg = torch.zeros(obs.image.size(0), self.max_len_msg, self.num_symbols, device=device)
+            batch_size = obs.image.size(0)
+            msg = torch.zeros(batch_size, self.max_len_msg, self.num_symbols, device=device)
         
         msg_embedding = self.encoder(msg)
         
         x = torch.transpose(torch.transpose(obs.image, 1, 3), 2, 3)
+        
+        if self.all_angles:
+            width = x.size(3) # must equal height x.size(2)
+            assert x.size(3) == x.size(2)
+            
+            x = x.repeat(1, 1, 2, 2)
+            
+            x[:, :,     0:width, width:     ] = x[:, :,     0:width,     0:width].flip(2).transpose(2, 3)
+            x[:, :, width:     , width:     ] = x[:, :,     0:width, width:     ].flip(2).transpose(2, 3)
+            x[:, :, width:     ,     0:width] = x[:, :, width:     , width:     ].flip(2).transpose(2, 3)
         
         if self.arch == "filmcnn":
             x = self.controller_1(x, instr_embedding)
