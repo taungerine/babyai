@@ -25,7 +25,7 @@ def get_global(env):
     # indicate position of agent
     image[x, y, 0] = 255
     
-    return image[1:, 1:, :]
+    return image[:-1, :-1, :]
 
 def worker(conn, env0, env1):
     while True:
