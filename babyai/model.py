@@ -89,7 +89,7 @@ class Encoder(nn.Module):
         return msg
 
 class Decoder(nn.Module):
-    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols):
+    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, disc_comm):
         super().__init__()
         self.lstm   = nn.LSTM(embedding_size, dec_dim, batch_first=True)
         self.linear = nn.Linear(dec_dim, num_symbols)
@@ -97,6 +97,7 @@ class Decoder(nn.Module):
         self.embedding_size = embedding_size
         self.max_len_msg    = max_len_msg
         self.num_symbols    = num_symbols
+        self.disc_comm      = disc_comm
 
     def forward(self, inputs, training, msg_hard=None, rng_states=None, cuda_rng_states=None):
         batch_size = inputs.size(0)
@@ -104,9 +105,11 @@ class Decoder(nn.Module):
         h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size).transpose(0, 1))
         logits = self.linear(h)
         
-        msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
-
-        return logits, logits ### NOTE
+        if self.disc_comm:
+            msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
+            return logits, msg
+        else:
+            return logits, logits
 
     def gumbel_softmax(self, logits, training, tau=1.0, msg_hard=None):
         device = torch.device("cuda" if logits.is_cuda else "cpu")
@@ -136,7 +139,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
                  image_dim=128, memory_dim=128, instr_dim=128, enc_dim=128, dec_dim=128,
                  use_instr=False, lang_model="gru", use_memory=False, arch="cnn1",
-                 max_len_msg=16, num_symbols=2, all_angles=False, aux_info=None):
+                 max_len_msg=16, num_symbols=2, all_angles=False, disc_comm=False, aux_info=None):
         super().__init__()
 
         # Decide which components are enabled
@@ -153,6 +156,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.max_len_msg = max_len_msg
         self.num_symbols = num_symbols
         self.all_angles  = all_angles
+        self.disc_comm   = disc_comm
 
         self.obs_space = obs_space
 
@@ -302,7 +306,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.encoder = Encoder(self.embedding_size, self.enc_dim, self.num_symbols)
         
         # Define decoder
-        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols)
+        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols, self.disc_comm)
 
         # Initialize parameters correctly
         self.apply(initialize_parameters)
