@@ -77,9 +77,9 @@ class ImageBOWEmbedding(nn.Module):
         return embeddings
 
 class Encoder(nn.Module):
-    def __init__(self, embedding_size, enc_dim, num_symbols):
+    def __init__(self, embedding_size, enc_dim, num_symbols, num_layers):
         super().__init__()
-        self.lstm = nn.LSTM(num_symbols, enc_dim, batch_first=True)
+        self.lstm = nn.LSTM(num_symbols, enc_dim, num_layers, batch_first=True)
 
     def forward(self, inputs):
         h, c = self.lstm(inputs)
@@ -89,9 +89,9 @@ class Encoder(nn.Module):
         return msg
 
 class Decoder(nn.Module):
-    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, disc_comm):
+    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, num_layers, disc_comm):
         super().__init__()
-        self.lstm   = nn.LSTM(embedding_size, dec_dim, batch_first=True)
+        self.lstm   = nn.LSTM(embedding_size, dec_dim, num_layers, batch_first=True)
         self.linear = nn.Linear(dec_dim, num_symbols)
         
         self.embedding_size = embedding_size
@@ -139,7 +139,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
                  image_dim=128, memory_dim=128, instr_dim=128, enc_dim=128, dec_dim=128,
                  use_instr=False, lang_model="gru", use_memory=False, arch="cnn1",
-                 max_len_msg=16, num_symbols=2, all_angles=False, disc_comm=False, aux_info=None):
+                 max_len_msg=16, num_symbols=2, num_layers=1, all_angles=False, disc_comm=False, aux_info=None):
         super().__init__()
 
         # Decide which components are enabled
@@ -155,6 +155,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.dec_dim     = dec_dim
         self.max_len_msg = max_len_msg
         self.num_symbols = num_symbols
+        self.num_layers  = num_layers
         self.all_angles  = all_angles
         self.disc_comm   = disc_comm
 
@@ -303,10 +304,10 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         )
         
         # Define encoder
-        self.encoder = Encoder(self.embedding_size, self.enc_dim, self.num_symbols)
+        self.encoder = Encoder(self.embedding_size, self.enc_dim, self.num_symbols, self.num_layers)
         
         # Define decoder
-        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols, self.disc_comm)
+        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols, self.num_layers, self.disc_comm)
 
         # Initialize parameters correctly
         self.apply(initialize_parameters)
