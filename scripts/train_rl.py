@@ -46,6 +46,8 @@ parser.add_argument("--len-message", type=int, default=16,
                     help="lengths of messages (default: 16)")
 parser.add_argument("--num-symbols", type=int, default=2,
                     help="number of symbols (default: 2)")
+parser.add_argument("--num-layers", type=int, default=1,
+                    help="number of decoder/encoder layers (default: 1)")
 parser.add_argument("--enc-dim", type=int, default=128,
                     help="dimensionality of the encoder LSTM")
 parser.add_argument("--dec-dim", type=int, default=128,
@@ -112,7 +114,7 @@ if acmodel0 is None:
         acmodel0 = ACModel(obss_preprocessor.obs_space, envs0[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
-                           args.len_message, args.num_symbols, args.all_angles, args.disc_comm)
+                           args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm)
 if acmodel1 is None:
     if args.pretrained_model:
         acmodel1 = utils.load_model(args.pretrained_model, 1, raise_not_found=True)
@@ -121,7 +123,7 @@ if acmodel1 is None:
         acmodel1 = ACModel(obss_preprocessor.obs_space, envs1[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
-                           args.len_message, args.num_symbols, False, args.disc_comm)
+                           args.len_message, args.num_symbols, args.num_layers, False, args.disc_comm)
 
 obss_preprocessor.vocab.save()
 utils.save_model(acmodel0, args.model, 0)
