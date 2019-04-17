@@ -99,14 +99,14 @@ class Decoder(nn.Module):
         self.num_symbols    = num_symbols
         self.disc_comm      = disc_comm
 
-    def forward(self, inputs, training, msg_hard=None, rng_states=None, cuda_rng_states=None):
+    def forward(self, inputs, training, tau=1.0, msg_hard=None, rng_states=None, cuda_rng_states=None):
         batch_size = inputs.size(0)
         
         h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size).transpose(0, 1))
         logits = self.linear(h)
         
         if self.disc_comm:
-            msg = self.gumbel_softmax(logits, training, msg_hard=msg_hard)
+            msg = self.gumbel_softmax(logits, training, tau=tau, msg_hard=msg_hard)
             return logits, msg
         else:
             return logits, logits
@@ -139,7 +139,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
                  image_dim=128, memory_dim=128, instr_dim=128, enc_dim=128, dec_dim=128,
                  use_instr=False, lang_model="gru", use_memory=False, arch="cnn1",
-                 max_len_msg=16, num_symbols=2, num_layers=1, all_angles=False, disc_comm=False, aux_info=None):
+                 max_len_msg=16, num_symbols=2, num_layers=1, all_angles=False, disc_comm=False, tau_init=1.0, aux_info=None):
         super().__init__()
 
         # Decide which components are enabled
@@ -158,6 +158,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.num_layers  = num_layers
         self.all_angles  = all_angles
         self.disc_comm   = disc_comm
+        self.tau_init    = tau_init
 
         self.obs_space = obs_space
 
@@ -432,7 +433,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
         
-        logits, message = self.decoder(embedding, self.training, msg_out)
+        logits, message = self.decoder(embedding, self.training, self.tau_init, msg_out)
         
         return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'extra_predictions': extra_predictions}
 
