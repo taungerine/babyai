@@ -1,5 +1,7 @@
 from multiprocessing import Process, Pipe
 import gym
+import numpy as np
+import math
 
 def get_global(env):
     # get global view
@@ -25,7 +27,11 @@ def get_global(env):
     # indicate position of agent
     image[x, y, 0] = 255
     
-    return image[1:, 1:, :]
+    return image
+
+def get_local(obs):
+    # get local view
+    return obs['image'][2:5, 5:7, :]
 
 def worker(conn, env0, env1):
     while True:
@@ -33,21 +39,32 @@ def worker(conn, env0, env1):
         if cmd == "step":
             if scouting:
                 obs, reward, done, info = env0.step(action)
-                obs = env1.reset()
+                obs   = env1.reset()
+                globs = obs.copy()
+                obs['image']   = get_local(obs)
+                globs['image'] = get_global(env1)
                 done = True
                 reward *= 0
             else:
                 obs, reward, done, info = env1.step(action)
                 if done:
-                    obs = env0.reset()
-                    obs['image'] = get_global(env0)
-            conn.send((obs, reward, done, info))
+                    obs   = env0.reset()
+                    globs = obs.copy()
+                    obs['image']   = get_local(obs)
+                    globs['image'] = get_global(env0)
+                else:
+                    globs = obs.copy()
+                    obs['image']   = get_local(obs)
+                    globs['image'] = get_global(env1)
+            conn.send((globs, obs, reward, done, info))
         elif cmd == "reset":
             if scouting:
                 env1.reset()
-            obs = env0.reset()
-            obs['image'] = get_global(env0)
-            conn.send(obs)
+            obs   = env0.reset()
+            globs = obs.copy()
+            obs['image']   = get_local(obs)
+            globs['image'] = get_global(env0)
+            conn.send((globs, obs))
         else:
             raise NotImplementedError
 
@@ -76,9 +93,11 @@ class ParallelEnv(gym.Env):
             local.send(("reset", scouting_, None))
         if scouting[0]:
             self.envs1[0].reset()
-        result0 = self.envs0[0].reset()
-        result0['image'] = get_global(self.envs0[0])
-        results = [result0] + [local.recv() for local in self.locals]
+        obs   = self.envs0[0].reset()
+        globs = obs.copy()
+        obs['image']   = get_local(obs)
+        globs['image'] = get_global(self.envs0[0])
+        results = zip(*[(globs, obs)] + [local.recv() for local in self.locals])
         return results
 
     def step(self, actions, scouting):
@@ -87,16 +106,25 @@ class ParallelEnv(gym.Env):
         
         if scouting[0]:
             obs, reward, done, info = self.envs0[0].step(actions[0])
-            obs = self.envs1[0].reset()
+            obs   = self.envs1[0].reset()
+            globs = obs.copy()
+            obs['image']   = get_local(obs)
+            globs['image'] = get_global(self.envs1[0])
             done = True
             reward *= 0
         else:
             obs, reward, done, info = self.envs1[0].step(actions[0])
             if done:
-                obs = self.envs0[0].reset()
-                obs['image'] = get_global(self.envs0[0])
+                obs   = self.envs0[0].reset()
+                globs = obs.copy()
+                obs['image']   = get_local(obs)
+                globs['image'] = get_global(self.envs0[0])
+            else:
+                globs = obs.copy()
+                obs['image']   = get_local(obs)
+                globs['image'] = get_global(self.envs1[0])
 
-        results = zip(*[(obs, reward, done, info)] + [local.recv() for local in self.locals])
+        results = zip(*[(globs, obs, reward, done, info)] + [local.recv() for local in self.locals])
         return results
 
     def render(self):
