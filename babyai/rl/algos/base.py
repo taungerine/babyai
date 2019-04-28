@@ -96,8 +96,9 @@ class BaseAlgo(ABC):
         self.advantages = torch.zeros(*shape,   device=self.device)
         self.log_probs  = torch.zeros(*shape,   device=self.device)
 
-        self.obs  = self.env.reset(self.scouting.cpu().numpy())
-        self.obss = [None]*(shape[0])
+        self.globs, self.obs = self.env.reset(self.scouting.cpu().numpy())
+        self.globss          = [None]*(shape[0])
+        self.obss            = [None]*(shape[0])
         
         # now that we've started by resetting, all the environments are scouting
         self.scouting += 1
@@ -150,30 +151,25 @@ class BaseAlgo(ABC):
         memory = torch.zeros(self.num_procs, self.acmodel0.memory_size, device=self.device)
         msg    = torch.zeros(self.num_procs, self.acmodel0.max_len_msg, self.acmodel0.num_symbols, device=self.device)
         
-        obs_mask = torch.zeros(1, 7, 7, 3, device=self.device) ### NOTE
-        obs_mask[:, 2:5, 5:7, :] = 1 ### NOTE
-        
         for i in range(self.num_frames_per_proc):
             # Do one agent-environment interaction
-            
-            preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
+            preprocessed_globs = self.preprocess_obss(self.globs, device=self.device)
+            preprocessed_obs   = self.preprocess_obss(self.obs,   device=self.device)
             
             with torch.no_grad():
                 
                 if torch.any(self.scouting):
                     # blind the scout to instructions
-                    preprocessed_obs.instr[self.scouting] *= 0
+                    preprocessed_globs.instr[self.scouting] *= 0
                     
-                    model_results0 = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))
+                    model_results0 = self.acmodel0(preprocessed_globs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))
                 
                 if torch.any(1 - self.scouting):
-                    # limit solver's field of view
-                    preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
                     
                     if self.use_comm:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
                     else:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
                 
                 if torch.any(self.scouting):
                     dist0                 = model_results0['dist']
@@ -194,13 +190,16 @@ class BaseAlgo(ABC):
                 action1                   = dist1.sample()
                 action[1 - self.scouting] = action1
             
-            obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
+            globs, obs, reward, done, env_info = self.env.step(action.cpu().numpy(), self.scouting.cpu().numpy())
             
             if self.aux_info:
                 env_info = self.aux_info_collector.process(env_info)
-                            
+            
             # Update experiences values
 
+            self.globss[i] = self.globs
+            self.globs     = globs
+            
             self.obss[i] = self.obs
             self.obs     = obs
 
@@ -254,25 +253,24 @@ class BaseAlgo(ABC):
 
         # Add advantage and return to experiences
 
-        preprocessed_obs = self.preprocess_obss(self.obs, device=self.device)
+        preprocessed_globs = self.preprocess_obss(self.globs, device=self.device)
+        preprocessed_obs   = self.preprocess_obss(self.obs,   device=self.device)
         
         with torch.no_grad():
             next_value = torch.zeros(self.num_procs, device=self.device)
             
             if torch.any(self.scouting):
                 # blind the scout to instructions
-                preprocessed_obs.instr[self.scouting] *= 0
+                preprocessed_globs.instr[self.scouting] *= 0
                 
-                next_value[    self.scouting] = self.acmodel0(preprocessed_obs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
+                next_value[    self.scouting] = self.acmodel0(preprocessed_globs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
             
             if torch.any(1 - self.scouting):
-                # limit solver's field of view
-                preprocessed_obs.image[1 - self.scouting] *= obs_mask ### NOTE
                 
                 if self.use_comm:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
                 else:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask
@@ -285,10 +283,13 @@ class BaseAlgo(ABC):
         # Flatten the data correctly, making sure that
         # each episode's data is a continuous chunk
 
-        exps     = DictList()
-        exps.obs = [self.obss[i][j]
-                     for j in range(self.num_procs)
-                     for i in range(self.num_frames_per_proc)]
+        exps       = DictList()
+        exps.globs = [self.globss[i][j]
+                       for j in range(self.num_procs)
+                       for i in range(self.num_frames_per_proc)]
+        exps.obs   = [self.obss[i][j]
+                       for j in range(self.num_procs)
+                       for i in range(self.num_frames_per_proc)]
         
         # In commments below T is self.num_frames_per_proc, P is self.num_procs,
         # D is the dimensionality
@@ -317,7 +318,8 @@ class BaseAlgo(ABC):
 
         # Preprocess experiences
 
-        exps.obs = self.preprocess_obss(exps.obs, device=self.device)
+        exps.globs = self.preprocess_obss(exps.globs, device=self.device)
+        exps.obs   = self.preprocess_obss(exps.obs,   device=self.device)
 
         # Log some values
 
