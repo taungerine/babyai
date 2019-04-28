@@ -7,6 +7,7 @@ from torch.distributions.relaxed_categorical import RelaxedOneHotCategorical
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import babyai.rl
 from babyai.rl.utils.supervised_losses import required_heads
+import math
 
 
 # Function from https://github.com/ikostrikov/pytorch-a2c-ppo-acktr/blob/master/model.py
@@ -79,10 +80,18 @@ class ImageBOWEmbedding(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, embedding_size, enc_dim, num_symbols, num_layers):
         super().__init__()
-        self.lstm = nn.LSTM(num_symbols, enc_dim, num_layers, batch_first=True)
+        self.linear0 = nn.Linear(num_symbols, 256)
+        self.prelu0  = nn.PReLU()
+        self.linear1 = nn.Linear(256, 512)
+        self.prelu1  = nn.PReLU()
+        self.lstm    = nn.LSTM(512, enc_dim, num_layers, batch_first=True)
 
     def forward(self, inputs):
-        h, c = self.lstm(inputs)
+        h    = self.linear0(inputs)
+        h    = self.prelu0(h)
+        h    = self.linear1(h)
+        h    = self.prelu1(h)
+        h, c = self.lstm(h)
 
         msg = h[:, -1, :]
         
@@ -91,8 +100,13 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, num_layers, disc_comm):
         super().__init__()
-        self.lstm   = nn.LSTM(embedding_size, dec_dim, num_layers, batch_first=True)
-        self.linear = nn.Linear(dec_dim, num_symbols)
+        self.lstm    = nn.LSTM(embedding_size, dec_dim, num_layers, batch_first=True)
+        self.prelu0  = nn.PReLU()
+        self.linear0 = nn.Linear(dec_dim, 512)
+        self.prelu1  = nn.PReLU()
+        self.linear1 = nn.Linear(512, 256)
+        self.prelu2  = nn.PReLU()
+        self.linear2 = nn.Linear(256, num_symbols)
         
         self.embedding_size = embedding_size
         self.max_len_msg    = max_len_msg
@@ -103,7 +117,12 @@ class Decoder(nn.Module):
         batch_size = inputs.size(0)
         
         h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size).transpose(0, 1))
-        logits = self.linear(h)
+        h      = self.prelu0(h)
+        h      = self.linear0(h)
+        h      = self.prelu1(h)
+        h      = self.linear1(h)
+        h      = self.prelu2(h)
+        logits = self.linear2(h)
         
         if self.disc_comm:
             msg = self.gumbel_softmax(logits, training, tau=tau, msg_hard=msg_hard)
@@ -364,6 +383,26 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         return self.memory_dim
 
     def forward(self, obs, memory, instr_embedding=None, msg=None, msg_out=None, rng_states=None, cuda_rng_states=None):
+        device = torch.device("cuda" if obs.instr.is_cuda else "cpu")
+        batch_size = obs.image.size(0)
+        
+        # pad image to be large enough for convolution
+        n = obs.image.size(1)
+        m = obs.image.size(2)
+        if n < 7 or m < 7:
+            # place image into middle-right of padded image
+            if n < 7 and m < 7:
+                image_new = torch.zeros((batch_size, 7, 7, 3), device=device)
+                offset = math.floor((7-n)/2)
+            elif n < 7:
+                image_new = torch.zeros((batch_size, 7, m, 3), device=device)
+                offset = math.floor((7-n)/2)
+            else: # m < 7
+                image_new = torch.zeros((batch_size, n, 7, 3), device=device)
+                offset = 0
+            image_new[:, offset:offset+n, -m:, :] = obs.image
+            obs.image = image_new
+        
         if self.use_instr and instr_embedding is None:
             instr_embedding = self._get_instr_embedding(obs.instr)
         if self.use_instr and self.lang_model == "attgru":
@@ -377,8 +416,6 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             instr_embedding = (instr_embedding * attention[:, :, None]).sum(1)
         
         if msg is None:
-            device = torch.device("cuda" if obs.instr.is_cuda else "cpu")
-            batch_size = obs.image.size(0)
             msg = torch.zeros(batch_size, self.max_len_msg, self.num_symbols, device=device)
         
         msg_embedding = self.encoder(msg)
@@ -407,6 +444,9 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             x = F.relu(self.film_pool(x))
         else:
             x = self.image_conv(x)
+
+        # take mean
+        x = x.mean(-1).mean(-1)
 
         x = x.reshape(x.shape[0], -1)
 
