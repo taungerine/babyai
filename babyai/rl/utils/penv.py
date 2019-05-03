@@ -25,7 +25,7 @@ def get_global(env):
     image = grid.encode()
 
     # indicate position of agent
-    image[x, y, 0] = 255
+    image[x, y, 0] = 11
     
     return image
 
