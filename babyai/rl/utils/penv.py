@@ -31,7 +31,7 @@ def get_global(env):
 
 def get_local(obs):
     # get local view
-    return obs['image'][2:5, 5:7, :]
+    return obs['image'][3:4, 5:7, :]
 
 def worker(conn, env0, env1):
     while True:
