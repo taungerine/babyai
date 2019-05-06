@@ -100,9 +100,9 @@ class PPOAlgo(BaseAlgo):
                     if torch.any(1 - sb.scouting):
                         
                         if self.use_comm:
-                            model_results1 = self.acmodel1(sb.globs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
                         else:
-                            model_results1 = self.acmodel1(sb.globs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting])
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting])
                     
                     if torch.any(sb.scouting):
                         dist0               = model_results0['dist']

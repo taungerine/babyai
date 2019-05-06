@@ -167,9 +167,9 @@ class BaseAlgo(ABC):
                 if torch.any(1 - self.scouting):
                     
                     if self.use_comm:
-                        model_results1 = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
                     else:
-                        model_results1 = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
                 
                 if torch.any(self.scouting):
                     dist0                 = model_results0['dist']
@@ -268,9 +268,9 @@ class BaseAlgo(ABC):
             if torch.any(1 - self.scouting):
                 
                 if self.use_comm:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
                 else:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask
