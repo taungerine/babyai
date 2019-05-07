@@ -73,6 +73,33 @@ def print_demo_lengths(demos):
         np.mean(num_frames_per_episode), np.std(num_frames_per_episode)))
 
 
+def get_global(env):
+    # get global view
+    grid = env.grid
+    
+    # position agent
+    x, y = env.start_pos
+    
+    # rotate to match agent's orientation
+    for i in range(env.agent_dir + 1):
+        # rotate grid
+        grid = grid.rotate_left()
+        
+        # rotate position of agent
+        x_new = y
+        y_new = grid.height - 1 - x
+        x     = x_new
+        y     = y_new
+    
+    # encode image for model
+    image = grid.encode()
+
+    # indicate position of agent
+    image[x, y, 0] = 10
+    
+    return image
+
+
 def generate_demos(n_episodes, valid, seed, shift=0):
     utils.seed(seed)
 
@@ -93,6 +120,8 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
         done = False
         obs = env.reset()
+        globs = obs.copy()
+        globs['image'] = get_global(env)
         agent.on_reset()
 
         actions = []
@@ -102,7 +131,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
         try:
             while not done:
-                action = agent.act(obs)['action']
+                action = agent.act(globs)['action']
                 if isinstance(action, torch.Tensor):
                     action = action.item()
                 new_obs, reward, done, _ = env.step(action)
