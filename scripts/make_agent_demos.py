@@ -127,6 +127,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
         actions = []
         mission = obs["mission"]
         images = []
+        glimages = []
         directions = []
 
         try:
@@ -135,15 +136,19 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 if isinstance(action, torch.Tensor):
                     action = action.item()
                 new_obs, reward, done, _ = env.step(action)
+                new_globs = new_obs.copy()
+                new_globs['image'] = get_global(env)
                 agent.analyze_feedback(reward, done)
 
                 actions.append(action)
                 images.append(obs['image'])
+                glimages.append(globs['image'])
                 directions.append(obs['direction'])
 
-                obs = new_obs
+                obs   = new_obs
+                globs = new_globs
             if reward > 0 and (args.filter_steps == 0 or len(images) <= args.filter_steps):
-                demos.append((mission, blosc.pack_array(np.array(images)), directions, actions))
+                demos.append((mission, blosc.pack_array(np.array(images)), blosc.pack_array(np.array(glimages)), directions, actions))
 
             if len(demos) >= n_episodes:
                 break
