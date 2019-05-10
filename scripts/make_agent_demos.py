@@ -100,6 +100,11 @@ def get_global(env):
     return image
 
 
+def get_local(obs):
+    # get local view
+    return obs['image'][3:4, 5:7, :]
+
+
 def generate_demos(n_episodes, valid, seed, shift=0):
     utils.seed(seed)
 
@@ -120,6 +125,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
 
         done = False
         obs = env.reset()
+        obs['image'] = get_local(obs)
         globs = obs.copy()
         globs['image'] = get_global(env)
         agent.on_reset()
@@ -136,6 +142,7 @@ def generate_demos(n_episodes, valid, seed, shift=0):
                 if isinstance(action, torch.Tensor):
                     action = action.item()
                 new_obs, reward, done, _ = env.step(action)
+                new_obs['image'] = get_local(new_obs)
                 new_globs = new_obs.copy()
                 new_globs['image'] = get_global(env)
                 agent.analyze_feedback(reward, done)
