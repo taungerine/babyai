@@ -48,7 +48,7 @@ class ModelAgent(Agent):
         self.argmax = argmax
         self.memory = None
 
-    def act_batch(self, many_obs):
+    def act_batch(self, many_obs, msg=None):
         if self.memory is None:
             self.memory = torch.zeros(
                 len(many_obs), self.model.memory_size, device=self.device)
@@ -57,10 +57,14 @@ class ModelAgent(Agent):
         preprocessed_obs = self.obss_preprocessor(many_obs, device=self.device)
 
         with torch.no_grad():
-            model_results = self.model(preprocessed_obs, self.memory)
+            if msg is None:
+                model_results = self.model(preprocessed_obs, self.memory)
+            else:
+                model_results = self.model(preprocessed_obs, self.memory, msg=msg)
             dist = model_results['dist']
             value = model_results['value']
             self.memory = model_results['memory']
+            msg_out = model_results['message']
 
         if self.argmax:
             action = dist.probs.max(1, keepdim=True)[1]
@@ -69,7 +73,9 @@ class ModelAgent(Agent):
 
         return {'action': action,
                 'dist': dist,
-                'value': value}
+                'value': value,
+                'message': msg_out
+               }
 
     def act(self, obs):
         return self.act_batch([obs])

@@ -47,18 +47,24 @@ def transform_demos(demos):
 
         mission = demo[0]
         all_images = demo[1]
-        directions = demo[2]
-        actions = demo[3]
+        all_glimages = demo[2]
+        directions = demo[3]
+        actions = demo[4]
 
         all_images = blosc.unpack_array(all_images)
+        all_glimages = blosc.unpack_array(all_glimages)
         n_observations = all_images.shape[0]
         assert len(directions) == len(actions) == n_observations, "error transforming demos"
         for i in range(n_observations):
+            globs = {'image': all_glimages[i],
+                     'direction': directions[i],
+                     'mission': mission}
             obs = {'image': all_images[i],
+                   'glimage': all_glimages[i],
                    'direction': directions[i],
                    'mission': mission}
             action = actions[i]
             done = i == n_observations - 1
-            new_demo.append((obs, action, done))
+            new_demo.append((globs, obs, action, done))
         new_demos.append(new_demo)
     return new_demos
