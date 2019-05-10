@@ -213,21 +213,22 @@ class ImitationLearning(object):
         # Observations, true action, values and done for each of the stored demostration
         globss, obss, action_true, done = flat_batch[:, 0], flat_batch[:, 1], flat_batch[:, 2], flat_batch[:, 3]
         action_true = torch.tensor([action for action in action_true], device=self.device, dtype=torch.long)
-
+        
         # Memory to be stored
         memories0 = torch.zeros([len(flat_batch), self.acmodel0.memory_size], device=self.device)
         memories1 = torch.zeros([len(flat_batch), self.acmodel1.memory_size], device=self.device)
+        msgs      = torch.zeros([len(flat_batch), self.acmodel0.max_len_msg, self.acmodel0.num_symbols], device=self.device)
         episode_ids = np.zeros(len(flat_batch))
         memory0 = torch.zeros([len(batch), self.acmodel0.memory_size], device=self.device)
         memory1 = torch.zeros([len(batch), self.acmodel1.memory_size], device=self.device)
 
         preprocessed_first_globs = self.obss_preprocessor(globss[inds], device=self.device)
         preprocessed_first_obs   = self.obss_preprocessor(  obss[inds], device=self.device)
-        instr_embedding = self.acmodel1._get_instr_embedding(preprocessed_first_obs.instr)
+        #instr_embedding = self.acmodel1._get_instr_embedding(preprocessed_first_obs.instr)
         
-        msg = self.acmodel0(preprocessed_first_globs,
-                            memory0[:len(inds), :],
-                            instr_embedding[:len(inds)])['message']
+        if not self.args.no_comm:
+            msg = self.acmodel0(preprocessed_first_globs,
+                                memory0[:len(inds), :])['message']
         
         # Loop terminates when every observation in the flat_batch has been handled
         while True:
@@ -239,11 +240,15 @@ class ImitationLearning(object):
             preprocessed_obs   = self.obss_preprocessor(  obs, device=self.device)
             with torch.no_grad():
                 # taking the memory till len(inds), as demos beyond that have already finished
-                new_memory1 = self.acmodel1(
-                    preprocessed_obs,
-                    memory1[:len(inds), :], instr_embedding[:len(inds)], msg=msg[:len(inds), :])['memory']
+                if self.args.no_comm:
+                    new_memory1 = self.acmodel1(preprocessed_obs,
+                                                memory1[:len(inds), :])['memory']
+                else:
+                    new_memory1 = self.acmodel1(preprocessed_obs,
+                                                memory1[:len(inds), :], msg=msg[:len(inds), :])['memory']
 
             memories1[inds, :] = memory1[:len(inds), :]
+            msgs[inds, :] = msg[:len(inds), :]
             memory1[:len(inds), :] = new_memory1
             episode_ids[inds] = range(len(inds))
 
@@ -261,18 +266,19 @@ class ImitationLearning(object):
 
         indexes = self.starting_indexes(num_frames)
         memory1 = memories1[indexes]
+        msg = msgs[indexes]
         accuracy = 0
         total_frames = len(indexes) * self.args.recurrence
         for _ in range(self.args.recurrence):
-            globs = globss[indexes]
+            #globs = globss[indexes]
             obs   = obss[indexes]
-            preprocessed_globs = self.obss_preprocessor(globs, device=self.device)
+            #preprocessed_globs = self.obss_preprocessor(globs, device=self.device)
             preprocessed_obs   = self.obss_preprocessor(  obs, device=self.device)
             action_step = action_true[indexes]
             mask_step = mask[indexes]
             model_results1 = self.acmodel1(
                 preprocessed_obs, memory1 * mask_step,
-                instr_embedding[episode_ids[indexes]])
+                msg=msg)
             dist    = model_results1['dist']
             memory1 = model_results1['memory']
 
@@ -323,7 +329,7 @@ class ImitationLearning(object):
 
         for env_name in ([self.args.env] if not getattr(self.args, 'multi_env', None)
                          else self.args.multi_env):
-            logs += [batch_evaluate(agent0, agent1, env_name, self.args.val_seed, episodes)]
+            logs += [batch_evaluate(agent0, agent1, env_name, self.args.val_seed, episodes, no_comm=self.args.no_comm)]
         agent0.model.train()
         agent1.model.train()
 
