@@ -217,7 +217,8 @@ class ImitationLearning(object):
         # Memory to be stored
         memories0 = torch.zeros([len(flat_batch), self.acmodel0.memory_size], device=self.device)
         memories1 = torch.zeros([len(flat_batch), self.acmodel1.memory_size], device=self.device)
-        msgs      = torch.zeros([len(flat_batch), self.acmodel0.max_len_msg, self.acmodel0.num_symbols], device=self.device)
+        if not self.args.no_comm:
+            msgs      = torch.zeros([len(flat_batch), self.acmodel0.max_len_msg, self.acmodel0.num_symbols], device=self.device)
         episode_ids = np.zeros(len(flat_batch))
         memory0 = torch.zeros([len(batch), self.acmodel0.memory_size], device=self.device)
         memory1 = torch.zeros([len(batch), self.acmodel1.memory_size], device=self.device)
@@ -248,7 +249,8 @@ class ImitationLearning(object):
                                                 memory1[:len(inds), :], msg=msg[:len(inds), :])['memory']
 
             memories1[inds, :] = memory1[:len(inds), :]
-            msgs[inds, :] = msg[:len(inds), :]
+            if not self.args.no_comm:
+                msgs[inds, :] = msg[:len(inds), :]
             memory1[:len(inds), :] = new_memory1
             episode_ids[inds] = range(len(inds))
 
@@ -266,7 +268,8 @@ class ImitationLearning(object):
 
         indexes = self.starting_indexes(num_frames)
         memory1 = memories1[indexes]
-        msg = msgs[indexes]
+        if not self.args.no_comm:
+            msg = msgs[indexes]
         accuracy = 0
         total_frames = len(indexes) * self.args.recurrence
         for _ in range(self.args.recurrence):
@@ -276,9 +279,13 @@ class ImitationLearning(object):
             preprocessed_obs   = self.obss_preprocessor(  obs, device=self.device)
             action_step = action_true[indexes]
             mask_step = mask[indexes]
-            model_results1 = self.acmodel1(
-                preprocessed_obs, memory1 * mask_step,
-                msg=msg)
+            if self.args.no_comm:
+                model_results1 = self.acmodel1(
+                    preprocessed_obs, memory1 * mask_step)
+            else:
+                model_results1 = self.acmodel1(
+                    preprocessed_obs, memory1 * mask_step,
+                    msg=msg)
             dist    = model_results1['dist']
             memory1 = model_results1['memory']
 
