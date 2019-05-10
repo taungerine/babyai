@@ -34,6 +34,24 @@ parser.add_argument("--multi-demos", nargs='*', default=None,
                     help="demos filenames for envs to train on (REQUIRED when multi-env is specified)")
 parser.add_argument("--multi-episodes", type=int, nargs='*', default=None,
                     help="number of episodes of demos to use from each file (REQUIRED when multi-env is specified)")
+parser.add_argument("--len-message", type=int, default=16,
+                    help="lengths of messages (default: 16)")
+parser.add_argument("--num-symbols", type=int, default=2,
+                    help="number of symbols (default: 2)")
+parser.add_argument("--num-layers", type=int, default=1,
+                    help="number of decoder/encoder layers (default: 1)")
+parser.add_argument("--enc-dim", type=int, default=128,
+                    help="dimensionality of the encoder LSTM")
+parser.add_argument("--dec-dim", type=int, default=128,
+                    help="dimensionality of the decoder LSTM")
+parser.add_argument("--no-comm", action="store_true", default=False,
+                    help="don't use communication")
+parser.add_argument("--all-angles", action="store_true", default=False,
+                    help="let the sender observe the environment from all angles")
+parser.add_argument("--disc-comm", action="store_true", default=False,
+                    help="use discrete instead of continuous communication")
+parser.add_argument("--tau-init", type=float, default=1.0,
+                    help="initial Gumbel temperature (default: 1.0)")
 
 
 def main(args):
@@ -77,7 +95,8 @@ def main(args):
     # Log command, availability of CUDA, and model
     logger.info(args)
     logger.info("CUDA available: {}".format(torch.cuda.is_available()))
-    logger.info(il_learn.acmodel)
+    logger.info(il_learn.acmodel0)
+    logger.info(il_learn.acmodel1)
 
     il_learn.train(il_learn.train_demos, writer, csv_writer, status_path, header)
 
