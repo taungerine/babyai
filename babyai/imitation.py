@@ -81,23 +81,48 @@ class ImitationLearning(object):
                                                         getattr(self.args, 'pretrained_model', None))
 
         # Define actor-critic model
-        self.acmodel = utils.load_model(args.model, raise_not_found=False)
-        if self.acmodel is None:
+        self.acmodel0 = utils.load_model(args.model, 0, raise_not_found=False)
+        self.acmodel1 = utils.load_model(args.model, 1, raise_not_found=False)
+        if self.acmodel0 is None:
             if getattr(self.args, 'pretrained_model', None):
-                self.acmodel = utils.load_model(args.pretrained_model, raise_not_found=True)
+                self.acmodel0 = utils.load_model(args.pretrained_model, 0, raise_not_found=True)
+            #else:
+                #self.acmodel0 = ACModel(self.obss_preprocessor.obs_space, action_space,
+                #                       args.image_dim, args.memory_dim, args.instr_dim,
+                #                       not self.args.no_instr, self.args.instr_arch,
+                #                       not self.args.no_mem, self.args.arch)
             else:
-                self.acmodel = ACModel(self.obss_preprocessor.obs_space, action_space,
-                                       args.image_dim, args.memory_dim, args.instr_dim,
-                                       not self.args.no_instr, self.args.instr_arch,
-                                       not self.args.no_mem, self.args.arch)
+                #torch.manual_seed(args.seed)
+                self.acmodel0 = ACModel(self.obss_preprocessor.obs_space, action_space,
+                                        args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
+                                        not self.args.no_instr, self.args.instr_arch, not self.args.no_mem, self.args.arch,
+                                        args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm, args.tau_init)
+        if self.acmodel1 is None:
+            if getattr(self.args, 'pretrained_model', None):
+                self.acmodel1 = utils.load_model(args.pretrained_model, 1, raise_not_found=True)
+            #else:
+                #self.acmodel1 = ACModel(self.obss_preprocessor.obs_space, action_space,
+                #                       args.image_dim, args.memory_dim, args.instr_dim,
+                #                       not self.args.no_instr, self.args.instr_arch,
+                #                       not self.args.no_mem, self.args.arch)
+            else:
+                #torch.manual_seed(args.seed)
+                self.acmodel1 = ACModel(self.obss_preprocessor.obs_space, action_space,
+                                        args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
+                                        not self.args.no_instr, self.args.instr_arch, not self.args.no_mem, self.args.arch,
+                                        args.len_message, args.num_symbols, args.num_layers, False, args.disc_comm, args.tau_init)
+
         self.obss_preprocessor.vocab.save()
-        utils.save_model(self.acmodel, args.model)
+        utils.save_model(self.acmodel0, args.model, 0)
+        utils.save_model(self.acmodel1, args.model, 1)
 
-        self.acmodel.train()
+        self.acmodel0.train()
+        self.acmodel1.train()
         if torch.cuda.is_available():
-            self.acmodel.cuda()
+            self.acmodel0.cuda()
+            self.acmodel1.cuda()
 
-        self.optimizer = torch.optim.Adam(self.acmodel.parameters(), self.args.lr, eps=self.args.optim_eps)
+        self.optimizer = torch.optim.Adam(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), self.args.lr, eps=self.args.optim_eps)
         self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=100, gamma=0.9)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -138,7 +163,8 @@ class ImitationLearning(object):
         offset = 0
 
         if not is_training:
-            self.acmodel.eval()
+            self.acmodel0.eval()
+            self.acmodel1.eval()
 
         # Log dictionary
         log = {"entropy": [], "policy_loss": [], "accuracy": []}
@@ -160,7 +186,8 @@ class ImitationLearning(object):
             offset += batch_size
 
         if not is_training:
-            self.acmodel.train()
+            self.acmodel0.train()
+            self.acmodel1.train()
 
         return log
 
@@ -184,31 +211,40 @@ class ImitationLearning(object):
         mask = torch.tensor(mask, device=self.device, dtype=torch.float).unsqueeze(1)
 
         # Observations, true action, values and done for each of the stored demostration
-        obss, action_true, done = flat_batch[:, 0], flat_batch[:, 1], flat_batch[:, 2]
+        globss, obss, action_true, done = flat_batch[:, 0], flat_batch[:, 1], flat_batch[:, 2], flat_batch[:, 3]
         action_true = torch.tensor([action for action in action_true], device=self.device, dtype=torch.long)
 
         # Memory to be stored
-        memories = torch.zeros([len(flat_batch), self.acmodel.memory_size], device=self.device)
+        memories0 = torch.zeros([len(flat_batch), self.acmodel0.memory_size], device=self.device)
+        memories1 = torch.zeros([len(flat_batch), self.acmodel1.memory_size], device=self.device)
         episode_ids = np.zeros(len(flat_batch))
-        memory = torch.zeros([len(batch), self.acmodel.memory_size], device=self.device)
+        memory0 = torch.zeros([len(batch), self.acmodel0.memory_size], device=self.device)
+        memory1 = torch.zeros([len(batch), self.acmodel1.memory_size], device=self.device)
 
-        preprocessed_first_obs = self.obss_preprocessor(obss[inds], device=self.device)
-        instr_embedding = self.acmodel._get_instr_embedding(preprocessed_first_obs.instr)
-
+        preprocessed_first_globs = self.obss_preprocessor(globss[inds], device=self.device)
+        preprocessed_first_obs   = self.obss_preprocessor(  obss[inds], device=self.device)
+        instr_embedding = self.acmodel1._get_instr_embedding(preprocessed_first_obs.instr)
+        
+        msg = self.acmodel0(preprocessed_first_globs,
+                            memory0[:len(inds), :],
+                            instr_embedding[:len(inds)])['message']
+        
         # Loop terminates when every observation in the flat_batch has been handled
         while True:
             # taking observations and done located at inds
-            obs = obss[inds]
+            globs = obss[inds]
+            obs   = obss[inds]
             done_step = done[inds]
-            preprocessed_obs = self.obss_preprocessor(obs, device=self.device)
+            preprocessed_globs = self.obss_preprocessor(globs, device=self.device)
+            preprocessed_obs   = self.obss_preprocessor(  obs, device=self.device)
             with torch.no_grad():
                 # taking the memory till len(inds), as demos beyond that have already finished
-                new_memory = self.acmodel(
+                new_memory1 = self.acmodel1(
                     preprocessed_obs,
-                    memory[:len(inds), :], instr_embedding[:len(inds)])['memory']
+                    memory1[:len(inds), :], instr_embedding[:len(inds)], msg=msg[:len(inds), :])['memory']
 
-            memories[inds, :] = memory[:len(inds), :]
-            memory[:len(inds), :] = new_memory
+            memories1[inds, :] = memory1[:len(inds), :]
+            memory1[:len(inds), :] = new_memory1
             episode_ids[inds] = range(len(inds))
 
             # Updating inds, by removing those indices corresponding to which the demonstrations have finished
@@ -224,19 +260,21 @@ class ImitationLearning(object):
         final_entropy, final_policy_loss, final_value_loss = 0, 0, 0
 
         indexes = self.starting_indexes(num_frames)
-        memory = memories[indexes]
+        memory1 = memories1[indexes]
         accuracy = 0
         total_frames = len(indexes) * self.args.recurrence
         for _ in range(self.args.recurrence):
-            obs = obss[indexes]
-            preprocessed_obs = self.obss_preprocessor(obs, device=self.device)
+            globs = globss[indexes]
+            obs   = obss[indexes]
+            preprocessed_globs = self.obss_preprocessor(globs, device=self.device)
+            preprocessed_obs   = self.obss_preprocessor(  obs, device=self.device)
             action_step = action_true[indexes]
             mask_step = mask[indexes]
-            model_results = self.acmodel(
-                preprocessed_obs, memory * mask_step,
+            model_results1 = self.acmodel1(
+                preprocessed_obs, memory1 * mask_step,
                 instr_embedding[episode_ids[indexes]])
-            dist = model_results['dist']
-            memory = model_results['memory']
+            dist    = model_results1['dist']
+            memory1 = model_results1['memory']
 
             entropy = dist.entropy().mean()
             policy_loss = -dist.log_prob(action_step).mean()
@@ -269,20 +307,25 @@ class ImitationLearning(object):
         if verbose:
             logger.info("Validating the model")
         if getattr(self.args, 'multi_env', None):
-            agent = utils.load_agent(self.env[0], model_name=self.args.model, argmax=True)
+            agent0 = utils.load_agent(self.env[0], model_name=self.args.model, argmax=True)
+            agent1 = utils.load_agent(self.env[0], model_name=self.args.model, argmax=True)
         else:
-            agent = utils.load_agent(self.env, model_name=self.args.model, argmax=True)
+            agent0 = utils.load_agent(self.env,    model_name=self.args.model, argmax=True)
+            agent1 = utils.load_agent(self.env,    model_name=self.args.model, argmax=True)
 
         # Setting the agent model to the current model
-        agent.model = self.acmodel
+        agent0.model = self.acmodel0
+        agent1.model = self.acmodel1
 
-        agent.model.eval()
+        agent0.model.eval()
+        agent1.model.eval()
         logs = []
 
         for env_name in ([self.args.env] if not getattr(self.args, 'multi_env', None)
                          else self.args.multi_env):
-            logs += [batch_evaluate(agent, env_name, self.args.val_seed, episodes)]
-        agent.model.train()
+            logs += [batch_evaluate(agent0, agent1, env_name, self.args.val_seed, episodes)]
+        agent0.model.train()
+        agent1.model.train()
 
         return logs
 
@@ -297,7 +340,7 @@ class ImitationLearning(object):
             return {'i': 0,
                     'num_frames': 0,
                     'patience': 0}
-
+        
         status = initial_status()
         if os.path.exists(status_path) and not reset_status:
             with open(status_path, 'r') as src:
@@ -312,12 +355,13 @@ class ImitationLearning(object):
             logger.info("Batch size too high. Setting it to the number of train demos ({})".format(len(train_demos)))
 
         # Model saved initially to avoid "Model not found Exception" during first validation step
-        utils.save_model(self.acmodel, self.args.model)
-
+        utils.save_model(self.acmodel0, self.args.model, 0)
+        utils.save_model(self.acmodel1, self.args.model, 1)
+        
         # best mean return to keep track of performance on validation set
         best_success_rate, patience, i = 0, 0, 0
         total_start_time = time.time()
-
+        
         while status['i'] < getattr(self.args, 'epochs', int(1e9)):
             if 'patience' not in status:  # if for some reason you're finetuining with IL an RL pretrained agent
                 status['patience'] = 0
@@ -326,14 +370,14 @@ class ImitationLearning(object):
                 break
             if status['num_frames'] > self.args.frames:
                 break
-
+        
             status['i'] += 1
             i = status['i']
             update_start_time = time.time()
 
             # Learning rate scheduler
             self.scheduler.step()
-
+            
             log = self.run_epoch_recurrence(train_demos, is_training=True)
             total_len = sum([len(item[3]) for item in train_demos])
             status['num_frames'] += total_len
@@ -399,20 +443,26 @@ class ImitationLearning(object):
                     logger.info("Saving best model")
 
                     if torch.cuda.is_available():
-                        self.acmodel.cpu()
-                    utils.save_model(self.acmodel, self.args.model + "_best")
+                        self.acmodel0.cpu()
+                        self.acmodel1.cpu()
+                    utils.save_model(self.acmodel0, self.args.model + "_best", 0)
+                    utils.save_model(self.acmodel1, self.args.model + "_best", 1)
                     self.obss_preprocessor.vocab.save(utils.get_vocab_path(self.args.model + "_best"))
                     if torch.cuda.is_available():
-                        self.acmodel.cuda()
+                        self.acmodel0.cuda()
+                        self.acmodel1.cuda()
                 else:
                     status['patience'] += 1
                     logger.info(
                         "Losing patience, new value={}, limit={}".format(status['patience'], self.args.patience))
 
                 if torch.cuda.is_available():
-                    self.acmodel.cpu()
-                utils.save_model(self.acmodel, self.args.model)
+                    self.acmodel0.cpu()
+                    self.acmodel1.cpu()
+                utils.save_model(self.acmodel0, self.args.model, 0)
+                utils.save_model(self.acmodel1, self.args.model, 1)
                 if torch.cuda.is_available():
-                    self.acmodel.cuda()
+                    self.acmodel0.cuda()
+                    self.acmodel1.cuda()
                 with open(status_path, 'w') as dst:
                     json.dump(status, dst)

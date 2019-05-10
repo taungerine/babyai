@@ -2,6 +2,33 @@ import numpy as np
 import gym
 
 
+def get_global(env):
+    # get global view
+    grid = env.grid
+    
+    # position agent
+    x, y = env.start_pos
+    
+    # rotate to match agent's orientation
+    for i in range(env.agent_dir + 1):
+        # rotate grid
+        grid = grid.rotate_left()
+        
+        # rotate position of agent
+        x_new = y
+        y_new = grid.height - 1 - x
+        x     = x_new
+        y     = y_new
+    
+    # encode image for model
+    image = grid.encode()
+
+    # indicate position of agent
+    image[x, y, 0] = 10
+    
+    return image
+
+
 # Returns the performance of the agent on the environment for a particular number of episodes.
 def evaluate(agent, env, episodes, model_agent=True, offsets=None):
     # Initialize logs
@@ -65,8 +92,11 @@ class ManyEnvs(gym.Env):
 
     def reset(self):
         many_obs = [env.reset() for env in self.envs]
+        many_globs = [obs.copy() for obs in many_obs]
+        for i in range(len(many_globs)):
+            many_globs[i]['image'] = get_global(self.envs[i])
         self.done = [False] * len(self.envs)
-        return many_obs
+        return many_globs, many_obs
 
     def step(self, actions):
         self.results = [env.step(action) if not done else self.last_results[i]
@@ -81,7 +111,7 @@ class ManyEnvs(gym.Env):
 
 
 # Returns the performance of the agent on the environment for a particular number of episodes.
-def batch_evaluate(agent, env_name, seed, episodes, seed_shift=1e9, return_obss_actions=False):
+def batch_evaluate(agent0, agent1, env_name, seed, episodes, seed_shift=1e9, return_obss_actions=False):
     num_envs = min(256, episodes)
 
     seed += seed_shift
@@ -105,8 +135,8 @@ def batch_evaluate(agent, env_name, seed, episodes, seed_shift=1e9, return_obss_
         seeds = range(seed + i * num_envs, seed + (i + 1) * num_envs)
         env.seed(seeds)
 
-        many_obs = env.reset()
-
+        many_globs, many_obs = env.reset()
+        
         cur_num_frames = 0
         num_frames = np.zeros((num_envs,), dtype='int64')
         returns = np.zeros((num_envs,))
@@ -114,15 +144,16 @@ def batch_evaluate(agent, env_name, seed, episodes, seed_shift=1e9, return_obss_
         if return_obss_actions:
             obss = [[] for _ in range(num_envs)]
             actions = [[] for _ in range(num_envs)]
+        msg = agent0.act_batch(many_globs)['message']
         while (num_frames == 0).any():
-            action = agent.act_batch(many_obs)['action']
+            action = agent1.act_batch(many_obs, msg)['action']
             if return_obss_actions:
                 for _ in range(num_envs):
                     if not already_done[_]:
                         obss[_].append(many_obs[_])
                         actions[_].append(action[_].item())
             many_obs, reward, done, _ = env.step(action)
-            agent.analyze_feedback(reward, done)
+            agent1.analyze_feedback(reward, done)
             done = np.array(done)
             just_done = done & (~already_done)
             returns += reward * just_done
