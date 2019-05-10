@@ -129,7 +129,7 @@ class Decoder(nn.Module):
         
         else:
             if msg_hard is None:
-                msg = torch.zeros_like(logits, device=self.device)
+                msg = torch.zeros_like(logits, device=device)
                 msg.scatter_(-1, torch.argmax(logits, dim=-1, keepdim=True), 1.0)
             else:
                 msg = msg_hard
@@ -413,6 +413,10 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             x[:, :,     0:width, width:     ] = x[:, :,     0:width,     0:width].flip(2).transpose(2, 3)
             x[:, :, width:     , width:     ] = x[:, :,     0:width, width:     ].flip(2).transpose(2, 3)
             x[:, :, width:     ,     0:width] = x[:, :, width:     , width:     ].flip(2).transpose(2, 3)
+        
+        #print(x[0, 0, :, :])
+        #print(x[0, 1, :, :])
+        #print(x[0, 2, :, :])
         
         if self.arch == "filmcnn":
             x = self.controller_1(x, instr_embedding)
