@@ -269,7 +269,7 @@ class BaseAlgo(ABC):
             if torch.any(1 - self.scouting):
                 
                 if self.use_comm:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
                 else:
                     next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
