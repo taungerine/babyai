@@ -90,6 +90,8 @@ class BaseAlgo(ABC):
         self.scoutings  = torch.zeros(*shape,   device=self.device, dtype=torch.uint8)
         self.mask       = torch.ones(shape[1],  device=self.device)
         self.masks      = torch.zeros(*shape,   device=self.device)
+        self.mask2      = torch.ones(shape[1],  device=self.device)
+        self.masks2     = torch.zeros(*shape,   device=self.device)
         self.actions    = torch.zeros(*shape,   device=self.device, dtype=torch.int)
         self.values     = torch.zeros(*shape,   device=self.device)
         self.rewards    = torch.zeros(*shape,   device=self.device)
@@ -208,7 +210,9 @@ class BaseAlgo(ABC):
             self.memory      = memory
 
             self.masks[i]   = self.mask
+            self.masks2[i]  = self.mask2
             self.mask       = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+            self.mask2      = 1 - torch.tensor(done, device=self.device, dtype=torch.float) * (1 - self.scouting).float()
             self.actions[i] = action
             self.values[i]  = value
             if self.reshape_reward is not None:
@@ -274,7 +278,7 @@ class BaseAlgo(ABC):
                     next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
-            next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask
+            next_mask      = self.masks2[i+1]     if i < self.num_frames_per_proc - 1 else self.mask2
             next_value     = self.values[i+1]     if i < self.num_frames_per_proc - 1 else next_value
             next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
 
