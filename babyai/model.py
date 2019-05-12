@@ -129,7 +129,7 @@ class Decoder(nn.Module):
         
         else:
             if msg_hard is None:
-                msg = torch.zeros_like(logits, device=self.device)
+                msg = torch.zeros_like(logits, device=device)
                 msg.scatter_(-1, torch.argmax(logits, dim=-1, keepdim=True), 1.0)
             else:
                 msg = msg_hard
@@ -457,7 +457,9 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         
         logits, message = self.decoder(embedding, self.training, self.tau_init, msg_out)
         
-        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'extra_predictions': extra_predictions}
+        dists_speaker = Categorical(logits=F.log_softmax(logits, dim=2))
+        
+        return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'extra_predictions': extra_predictions}
 
     def _get_instr_embedding(self, instr):
         if self.lang_model == 'gru':
@@ -520,4 +522,4 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         return dists_speaker.log_prob(msg.argmax(dim=2)).mean()
 
     def speaker_entropy(self, dists_speaker):
-        return dists_speaker.entropy().mean()
+        return dists_speaker.entropy().mean(-1)
