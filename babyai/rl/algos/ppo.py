@@ -109,6 +109,7 @@ class PPOAlgo(BaseAlgo):
                         value[sb.scouting]  = model_results0['value']
                         memory[sb.scouting] = model_results0['memory']
                         msg[sb.scouting]    = model_results0['message']
+                        dists_speaker       = model_results0['dists_speaker']
                     
                     if torch.any(1 - sb.scouting):
                         dist1                   = model_results1['dist']
@@ -116,13 +117,15 @@ class PPOAlgo(BaseAlgo):
                         memory[1 - sb.scouting] = model_results1['memory']
                     
                     if torch.any(sb.scouting):
-                        entropies[sb.scouting]     = dist0.entropy()
+                        #entropies[sb.scouting]     = dist0.entropy()
+                        entropies[sb.scouting]     = self.acmodel0.speaker_entropy(dists_speaker)
                     if torch.any(1 - sb.scouting):
                         entropies[1 - sb.scouting] = dist1.entropy()
                     entropy = entropies.mean()
                     
                     if torch.any(sb.scouting):
-                        log_prob[sb.scouting]     = dist0.log_prob(sb.action[    sb.scouting])
+                        #log_prob[sb.scouting]     = dist0.log_prob(sb.action[    sb.scouting])
+                        log_prob[sb.scouting]     = self.acmodel0.speaker_log_prob(dists_speaker, msg[sb.scouting])
                     if torch.any(1 - sb.scouting):
                         log_prob[1 - sb.scouting] = dist1.log_prob(sb.action[1 - sb.scouting])
                     

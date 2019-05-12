@@ -167,15 +167,16 @@ class BaseAlgo(ABC):
                 if torch.any(1 - self.scouting):
                     
                     if self.use_comm:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))
                     else:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))
                 
                 if torch.any(self.scouting):
                     dist0                 = model_results0['dist']
                     value[self.scouting]  = model_results0['value']
                     memory[self.scouting] = model_results0['memory']
                     msg[self.scouting]    = model_results0['message']
+                    dists_speaker         = model_results0['dists_speaker']
                     
                 if torch.any(1 - self.scouting):
                     dist1                     = model_results1['dist']
@@ -218,7 +219,7 @@ class BaseAlgo(ABC):
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
             if torch.any(self.scouting):
-                self.log_probs[i, self.scouting]     = dist0.log_prob(action0)
+                self.log_probs[i, self.scouting]     = self.acmodel0.speaker_log_prob(dists_speaker, msg[self.scouting])
             if torch.any(1 - self.scouting):
                 self.log_probs[i, 1 - self.scouting] = dist1.log_prob(action1)
             self.scoutings[i] = self.scouting
@@ -268,9 +269,9 @@ class BaseAlgo(ABC):
             if torch.any(1 - self.scouting):
                 
                 if self.use_comm:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_globs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1), msg=(self.msg[1 - self.scouting]))['value']
                 else:
-                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting],   self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
+                    next_value[1 - self.scouting] = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory[1 - self.scouting] * self.mask[1 - self.scouting].unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask      = self.masks[i+1]      if i < self.num_frames_per_proc - 1 else self.mask
