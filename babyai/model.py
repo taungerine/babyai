@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.distributions.categorical import Categorical
+from torch.distributions.one_hot_categorical import OneHotCategorical
 from torch.distributions.relaxed_categorical import RelaxedOneHotCategorical
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import babyai.rl
@@ -90,7 +91,7 @@ class Encoder(nn.Module):
         return msg
 
 class Decoder(nn.Module):
-    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, num_layers, disc_comm):
+    def __init__(self, embedding_size, dec_dim, max_len_msg, num_symbols, num_layers, disc_comm, disc_comm_rl):
         super().__init__()
         self.lstm   = nn.LSTM(embedding_size, dec_dim, num_layers, batch_first=True)
         self.linear = nn.Linear(dec_dim, num_symbols)
@@ -99,6 +100,7 @@ class Decoder(nn.Module):
         self.max_len_msg    = max_len_msg
         self.num_symbols    = num_symbols
         self.disc_comm      = disc_comm
+        self.disc_comm_rl   = disc_comm_rl
 
     def forward(self, inputs, training, tau=1.0, msg_hard=None, rng_states=None, cuda_rng_states=None):
         batch_size = inputs.size(0)
@@ -106,11 +108,19 @@ class Decoder(nn.Module):
         h, c   = self.lstm(inputs.expand(self.max_len_msg, batch_size, self.embedding_size).transpose(0, 1))
         logits = self.linear(h)
         
+        dists_speaker = OneHotCategorical(logits=F.log_softmax(logits, dim=2))
+        
         if self.disc_comm:
             msg = self.gumbel_softmax(logits, training, tau=tau, msg_hard=msg_hard)
-            return logits, msg
+            return logits, dists_speaker, msg
+        elif self.disc_comm_rl:
+            if msg_hard is None:
+                msg = dists_speaker.sample()
+            else:
+                msg = msg_hard
+            return logits, dists_speaker, msg
         else:
-            return logits, logits
+            return logits, dists_speaker, logits
 
     def gumbel_softmax(self, logits, training, tau=1.0, msg_hard=None):
         device = torch.device("cuda" if logits.is_cuda else "cpu")
@@ -140,26 +150,27 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
     def __init__(self, obs_space, action_space,
                  image_dim=128, memory_dim=128, instr_dim=128, enc_dim=128, dec_dim=128,
                  use_instr=False, lang_model="gru", use_memory=False, arch="cnn1",
-                 max_len_msg=16, num_symbols=2, num_layers=1, all_angles=False, disc_comm=False, tau_init=1.0, aux_info=None):
+                 max_len_msg=16, num_symbols=2, num_layers=1, all_angles=False, disc_comm=False, disc_comm_rl=False, tau_init=1.0, aux_info=None):
         super().__init__()
 
         # Decide which components are enabled
-        self.use_instr   = use_instr
-        self.use_memory  = use_memory
-        self.arch        = arch
-        self.lang_model  = lang_model
-        self.aux_info    = aux_info
-        self.image_dim   = image_dim
-        self.memory_dim  = memory_dim
-        self.instr_dim   = instr_dim
-        self.enc_dim     = enc_dim
-        self.dec_dim     = dec_dim
-        self.max_len_msg = max_len_msg
-        self.num_symbols = num_symbols
-        self.num_layers  = num_layers
-        self.all_angles  = all_angles
-        self.disc_comm   = disc_comm
-        self.tau_init    = tau_init
+        self.use_instr    = use_instr
+        self.use_memory   = use_memory
+        self.arch         = arch
+        self.lang_model   = lang_model
+        self.aux_info     = aux_info
+        self.image_dim    = image_dim
+        self.memory_dim   = memory_dim
+        self.instr_dim    = instr_dim
+        self.enc_dim      = enc_dim
+        self.dec_dim      = dec_dim
+        self.max_len_msg  = max_len_msg
+        self.num_symbols  = num_symbols
+        self.num_layers   = num_layers
+        self.all_angles   = all_angles
+        self.disc_comm    = disc_comm
+        self.disc_comm_rl = disc_comm_rl
+        self.tau_init     = tau_init
 
         self.obs_space = obs_space
 
@@ -309,7 +320,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         self.encoder = Encoder(self.embedding_size, self.enc_dim, self.num_symbols, self.num_layers)
         
         # Define decoder
-        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols, self.num_layers, self.disc_comm)
+        self.decoder = Decoder(self.embedding_size, self.dec_dim, self.max_len_msg, self.num_symbols, self.num_layers, self.disc_comm, self.disc_comm_rl)
 
         # Initialize parameters correctly
         self.apply(initialize_parameters)
@@ -455,9 +466,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
         x = self.critic(embedding)
         value = x.squeeze(1)
         
-        logits, message = self.decoder(embedding, self.training, self.tau_init, msg_out)
-        
-        dists_speaker = Categorical(logits=F.log_softmax(logits, dim=2))
+        logits, dists_speaker, message = self.decoder(embedding, self.training, self.tau_init, msg_out)
         
         return {'dist': dist, 'value': value, 'memory': memory, 'message': message, 'dists_speaker': dists_speaker, 'extra_predictions': extra_predictions}
 
@@ -519,7 +528,7 @@ class ACModel(nn.Module, babyai.rl.RecurrentACModel):
             ValueError("Undefined instruction architecture: {}".format(self.use_instr))
 
     def speaker_log_prob(self, dists_speaker, msg):
-        return dists_speaker.log_prob(msg.argmax(dim=2)).mean()
+        return dists_speaker.log_prob(msg).sum(-1)
 
     def speaker_entropy(self, dists_speaker):
-        return dists_speaker.entropy().mean(-1)
+        return dists_speaker.entropy().sum(-1)
