@@ -58,6 +58,8 @@ parser.add_argument("--all-angles", action="store_true", default=False,
                     help="let the sender observe the environment from all angles")
 parser.add_argument("--disc-comm", action="store_true", default=False,
                     help="use discrete instead of continuous communication")
+parser.add_argument("--disc-comm-rl", action="store_true", default=False,
+                    help="use discrete instead of continuous communication (RL)")
 parser.add_argument("--tau-init", type=float, default=1.0,
                     help="initial Gumbel temperature (default: 1.0)")
 args = parser.parse_args()
@@ -116,7 +118,7 @@ if acmodel0 is None:
         acmodel0 = ACModel(obss_preprocessor.obs_space, envs0[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
-                           args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm, args.tau_init)
+                           args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm, args.disc_comm_rl, args.tau_init)
 if acmodel1 is None:
     if args.pretrained_model:
         acmodel1 = utils.load_model(args.pretrained_model, 1, raise_not_found=True)
@@ -125,7 +127,7 @@ if acmodel1 is None:
         acmodel1 = ACModel(obss_preprocessor.obs_space, envs1[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
-                           args.len_message, args.num_symbols, args.num_layers, False, args.disc_comm, args.tau_init)
+                           args.len_message, args.num_symbols, args.num_layers, False, args.disc_comm, args.disc_comm_rl, args.tau_init)
 
 obss_preprocessor.vocab.save()
 utils.save_model(acmodel0, args.model, 0)
