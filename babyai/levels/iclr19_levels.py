@@ -693,17 +693,25 @@ class Level_GoToObjCustomBig(RoomGridLevel):
         
         self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
 
-# from Level_PickupDist
-#type = obj.type
-#color = obj.color
 
-#select_by = self._rand_elem(["type", "color", "both"])
-#if select_by == "color":
-#    type = None
-#elif select_by == "type":
-#    color = None
-
-#self.instrs = PickupInstr(ObjDesc(type, color), strict=self.debug)
+class Level_GoToObjBig(RoomGridLevel):
+    """
+        Go to an object, inside a single room with no doors, no distractors
+        """
+    
+    def __init__(self, room_size=16, seed=None):
+        super().__init__(
+                         num_rows=1,
+                         num_cols=1,
+                         room_size=room_size,
+                         seed=seed
+                         )
+    
+    def gen_mission(self):
+        self.place_agent()
+        objs = self.add_distractors(num_distractors=1)
+        obj = objs[0]
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
 
 
 # Register the levels in this file
