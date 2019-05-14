@@ -162,7 +162,7 @@ class BaseAlgo(ABC):
                 
                 if torch.any(self.scouting):
                     # blind the scout to instructions
-                    preprocessed_globs.instr[self.scouting] *= 0
+                    #preprocessed_globs.instr[self.scouting] *= 0
                     
                     model_results0 = self.acmodel0(preprocessed_globs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))
                 
@@ -266,7 +266,7 @@ class BaseAlgo(ABC):
             
             if torch.any(self.scouting):
                 # blind the scout to instructions
-                preprocessed_globs.instr[self.scouting] *= 0
+                #preprocessed_globs.instr[self.scouting] *= 0
                 
                 next_value[    self.scouting] = self.acmodel0(preprocessed_globs[    self.scouting], self.memory[    self.scouting] * self.mask[    self.scouting].unsqueeze(1))['value']
             
