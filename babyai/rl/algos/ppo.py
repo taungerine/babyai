@@ -104,6 +104,9 @@ class PPOAlgo(BaseAlgo):
                     if self.use_comm:
                     
                         if torch.any(sb.comm):
+                            # blind the scout to instructions
+                            sb.globs.instr[sb.comm] *= 0
+                            
                             model_results0  = self.acmodel0(sb.globs[  sb.comm], memory0[    sb.comm] * sb.mask[    sb.comm], msg_out=msg[sb.comm])
                             
                             msg[sb.comm] = model_results0['message']
