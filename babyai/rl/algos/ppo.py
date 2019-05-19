@@ -156,7 +156,8 @@ class PPOAlgo(BaseAlgo):
                         surr20         = (value_clipped0 - sb.returnn0[sb.comm]).pow(2)
                         value_loss0    = torch.max(surr10, surr20).mean()
                         
-                        loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
+                        loss0  = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
+                        loss0 /= sb.comm.nonzero().size(0)
                         
                         # Update batch values
                         
@@ -176,7 +177,7 @@ class PPOAlgo(BaseAlgo):
                     surr21         = (value_clipped1 - sb.returnn1).pow(2)
                     value_loss1    = torch.max(surr11, surr21).mean()
                     
-                    loss1 = policy_loss1 - self.entropy_coef * entropy1 + self.value_loss_coef * value_loss1
+                    loss1  = policy_loss1 - self.entropy_coef * entropy1 + self.value_loss_coef * value_loss1
 
                     # Update batch values
                     
