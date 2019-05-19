@@ -10,15 +10,15 @@ class PPOAlgo(BaseAlgo):
     """The class for the Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
 
-    def __init__(self, envs0, envs1, acmodel0, acmodel1, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
+    def __init__(self, envs, acmodel0, acmodel1, n, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
                  gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
                  adam_eps=1e-5, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
                  reshape_reward=None, use_comm=True, aux_info=None):
         num_frames_per_proc = num_frames_per_proc or 128
 
-        super().__init__(envs0, envs1, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm,
+        super().__init__(envs, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, n,
                          aux_info)
 
         self.clip_eps = clip_eps
@@ -72,19 +72,28 @@ class PPOAlgo(BaseAlgo):
                 # there are as many inds as there are batches
                 # Initialize batch values
 
-                batch_entropy     = 0
-                batch_value       = 0
-                batch_policy_loss = 0
-                batch_value_loss  = 0
-                batch_loss        = 0
+                batch_entropy0     = 0
+                batch_value0       = 0
+                batch_policy_loss0 = 0
+                batch_value_loss0  = 0
+                batch_loss0        = 0
+                
+                batch_entropy1     = 0
+                batch_value1       = 0
+                batch_policy_loss1 = 0
+                batch_value_loss1  = 0
+                batch_loss1        = 0
 
                 # Initialize
-                value  = torch.zeros(inds.shape[0], device=self.device)
-                memory = exps.memory[inds]
-                msg    = exps.message[inds]
+                value0  = torch.zeros(inds.shape[0], device=self.device)
+                value1  = torch.zeros(inds.shape[0], device=self.device)
+                memory0 = exps.memory0[inds]
+                memory1 = exps.memory1[inds]
+                msg     = exps.message[inds]
                 
-                entropies = torch.zeros(inds.shape[0], device=self.device)
-                log_prob  = torch.zeros(inds.shape[0], device=self.device)
+                entropies1 = torch.zeros(inds.shape[0], device=self.device)
+                log_prob0  = torch.zeros(inds.shape[0], device=self.device)
+                log_prob1  = torch.zeros(inds.shape[0], device=self.device)
 
                 for i in range(self.recurrence):
                     # Create a sub-batch of experience
@@ -92,86 +101,110 @@ class PPOAlgo(BaseAlgo):
 
                     # Compute loss
                     
-                    if torch.any(sb.scouting):
-                        # blind the scout to instructions
-                        #sb.globs.instr[sb.scouting] *= 0
+                    if self.use_comm:
+                    
+                        if torch.any(sb.comm):
+                            model_results0  = self.acmodel0(sb.globs[  sb.comm], memory0[    sb.comm] * sb.mask[    sb.comm], msg_out=msg[sb.comm])
+                            
+                            msg[sb.comm] = model_results0['message']
+                            
+                            model_results1A = self.acmodel1(sb.obs[    sb.comm], memory1[    sb.comm] * sb.mask[    sb.comm], msg=(msg[    sb.comm]))
                         
-                        model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory[    sb.scouting] * sb.mask[    sb.scouting], msg_out=sb.message_out[sb.scouting])
+                        if torch.any(1 - sb.comm):
+                            model_results1B = self.acmodel1(sb.obs[1 - sb.comm], memory1[1 - sb.comm] * sb.mask[1 - sb.comm], msg=(msg[1 - sb.comm]))
+                    else:
+                        model_results1B = self.acmodel1(sb.obs, memory1 * sb.mask, msg=msg)
                     
-                    if torch.any(1 - sb.scouting):
+                    if torch.any(sb.comm):
+                        dists_speaker    = model_results0['dists_speaker']
+                        value0[sb.comm]  = model_results0['value']
+                        memory0[sb.comm] = model_results0['memory']
                         
-                        if self.use_comm:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
-                        else:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting])
+                        distA            = model_results1A['dist']
+                        value1[sb.comm]  = model_results1A['value']
+                        memory1[sb.comm] = model_results1A['memory']
+                                
+                    if torch.any(1 - sb.comm):
+                        distB                = model_results1B['dist']
+                        value1[1 - sb.comm]  = model_results1B['value']
+                        memory1[1 - sb.comm] = model_results1B['memory']
                     
-                    if torch.any(sb.scouting):
-                        dist0               = model_results0['dist']
-                        value[sb.scouting]  = model_results0['value']
-                        memory[sb.scouting] = model_results0['memory']
-                        msg[sb.scouting]    = model_results0['message']
-                        dists_speaker       = model_results0['dists_speaker']
+                    if torch.any(sb.comm):
+                        entropy0                = self.acmodel0.speaker_entropy(dists_speaker).mean()
+                        entropies1[    sb.comm] = distA.entropy()
+                    if torch.any(1 - sb.comm):
+                        entropies1[1 - sb.comm] = distB.entropy()
+                    entropy1 = entropies1.mean()
                     
-                    if torch.any(1 - sb.scouting):
-                        dist1                   = model_results1['dist']
-                        value[1 - sb.scouting]  = model_results1['value']
-                        memory[1 - sb.scouting] = model_results1['memory']
+                    if torch.any(sb.comm):
+                        log_prob0[    sb.comm] = self.acmodel0.speaker_log_prob(dists_speaker, msg[sb.comm])
+                        log_prob1[    sb.comm] = distA.log_prob(sb.action[    sb.comm])
+                    if torch.any(1 - sb.comm):
+                        log_prob1[1 - sb.comm] = distB.log_prob(sb.action[1 - sb.comm])
                     
-                    if torch.any(sb.scouting):
-                        #entropies[sb.scouting]     = dist0.entropy()
-                        entropies[sb.scouting]     = self.acmodel0.speaker_entropy(dists_speaker)
-                    if torch.any(1 - sb.scouting):
-                        entropies[1 - sb.scouting] = dist1.entropy()
-                    entropy = entropies.mean()
+                    if torch.any(sb.comm):
+                        ratio0       = torch.exp(log_prob0[sb.comm] - sb.log_prob0[sb.comm])
+                        surr10       = ratio0 * sb.advantage0[sb.comm]
+                        surr20       = torch.clamp(ratio0, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage0[sb.comm]
+                        policy_loss0 = -torch.min(surr10, surr20).mean()
+                        
+                        value_clipped0 = sb.value0[sb.comm] + torch.clamp(value0[sb.comm] - sb.value0[sb.comm], -self.clip_eps, self.clip_eps)
+                        surr10         = (value0[sb.comm] - sb.returnn0[sb.comm]).pow(2)
+                        surr20         = (value_clipped0 - sb.returnn0[sb.comm]).pow(2)
+                        value_loss0    = torch.max(surr10, surr20).mean()
+                        
+                        loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
+                        
+                        # Update batch values
+                        
+                        batch_entropy0     += entropy0.item()
+                        batch_value0       += value0.mean().item()
+                        batch_policy_loss0 += policy_loss0.item()
+                        batch_value_loss0  += value_loss0.item()
+                        batch_loss0        += loss0
                     
-                    if torch.any(sb.scouting):
-                        #log_prob[sb.scouting]     = dist0.log_prob(sb.action[    sb.scouting])
-                        log_prob[sb.scouting]     = self.acmodel0.speaker_log_prob(dists_speaker, msg[sb.scouting])
-                    if torch.any(1 - sb.scouting):
-                        log_prob[1 - sb.scouting] = dist1.log_prob(sb.action[1 - sb.scouting])
+                    ratio1       = torch.exp(log_prob1 - sb.log_prob1)
+                    surr11       = ratio1 * sb.advantage1
+                    surr21       = torch.clamp(ratio1, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage1
+                    policy_loss1 = -torch.min(surr11, surr21).mean()
                     
-                    ratio       = torch.exp(log_prob - sb.log_prob)
-                    surr1       = ratio * sb.advantage
-                    surr2       = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage
-                    policy_loss = -torch.min(surr1, surr2).mean()
+                    value_clipped1 = sb.value1 + torch.clamp(value1 - sb.value1, -self.clip_eps, self.clip_eps)
+                    surr11         = (value1 - sb.returnn1).pow(2)
+                    surr21         = (value_clipped1 - sb.returnn1).pow(2)
+                    value_loss1    = torch.max(surr11, surr21).mean()
                     
-                    value_clipped = sb.value + torch.clamp(value - sb.value, -self.clip_eps, self.clip_eps)
-                    surr1         = (value - sb.returnn).pow(2)
-                    surr2         = (value_clipped - sb.returnn).pow(2)
-                    value_loss    = torch.max(surr1, surr2).mean()
-                    
-                    loss = policy_loss - self.entropy_coef * entropy + self.value_loss_coef * value_loss
+                    loss1 = policy_loss1 - self.entropy_coef * entropy1 + self.value_loss_coef * value_loss1
 
                     # Update batch values
                     
-                    batch_entropy     += entropy.item()
-                    batch_value       += value.mean().item()
-                    batch_policy_loss += policy_loss.item()
-                    batch_value_loss  += value_loss.item()
-                    batch_loss        += loss
-
-                    # Update memories for next epoch
-                        
-                    #    exps.memory[inds + i + 1] = memory.detach()
-                
-                    #    exps.message[inds + i + 1] = msg.detach()
+                    batch_entropy1     += entropy1.item()
+                    batch_value1       += value1.mean().item()
+                    batch_policy_loss1 += policy_loss1.item()
+                    batch_value_loss1  += value_loss1.item()
+                    batch_loss1        += loss1
 
                 # Update batch values
                 
-                batch_entropy     /= self.recurrence
-                batch_value       /= self.recurrence
-                batch_policy_loss /= self.recurrence
-                batch_value_loss  /= self.recurrence
-                batch_loss        /= self.recurrence
+                batch_entropy0     /= self.recurrence
+                batch_value0       /= self.recurrence
+                batch_policy_loss0 /= self.recurrence
+                batch_value_loss0  /= self.recurrence
+                batch_loss0        /= self.recurrence
+                
+                batch_entropy1     /= self.recurrence
+                batch_value1       /= self.recurrence
+                batch_policy_loss1 /= self.recurrence
+                batch_value_loss1  /= self.recurrence
+                batch_loss1        /= self.recurrence
 
                 # Update actor-critic
                 
                 self.optimizer0.zero_grad()
                 self.optimizer1.zero_grad()
-                batch_loss.backward()
-                grad_norm = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
-                grad_norm = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel1.parameters() if p.grad is not None) ** 0.5
-                #torch.nn.utils.clip_grad_norm_(list(self.acmodel0.parameters()) + list(self.acmodel1.parameters()), self.max_grad_norm)
+                batch_loss0.backward()
+                batch_loss1.backward()
+                grad_norm0 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
+                grad_norm1 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel1.parameters() if p.grad is not None) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel0.parameters(), self.max_grad_norm)
                 torch.nn.utils.clip_grad_norm_(self.acmodel1.parameters(), self.max_grad_norm)
                 self.optimizer0.step()
@@ -179,12 +212,12 @@ class PPOAlgo(BaseAlgo):
                 
                 # Update log values
 
-                log_entropies.append(batch_entropy)
-                log_values.append(batch_value)
-                log_policy_losses.append(batch_policy_loss)
-                log_value_losses.append(batch_value_loss)
-                log_grad_norms.append(grad_norm.item())
-                log_losses.append(batch_loss.item())
+                log_entropies.append(batch_entropy0 + batch_entropy1)
+                log_values.append(batch_value0 + batch_value1)
+                log_policy_losses.append(batch_policy_loss0 + batch_policy_loss1)
+                log_value_losses.append(batch_value_loss0 + batch_value_loss1)
+                log_grad_norms.append(grad_norm0.item() + grad_norm1.item())
+                log_losses.append(batch_loss0.item() + batch_loss1.item())
 
         # Log some values
 
