@@ -271,7 +271,7 @@ class BaseAlgo(ABC):
         
         with torch.no_grad():
             if self.use_comm:
-                self.comm = self.step_count % N == 0
+                self.comm = self.step_count % self.n == 0
                 
                 next_value = torch.zeros(self.num_procs, device=self.device)
                 
