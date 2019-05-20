@@ -157,7 +157,7 @@ class PPOAlgo(BaseAlgo):
                         value_loss0    = torch.max(surr10, surr20).mean()
                         
                         loss0  = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
-                        loss0 /= sb.comm.nonzero().size(0)
+                        loss0 *= sb.comm.nonzero().size(0) / sb.comm.size(0)
                         
                         # Update batch values
                         
@@ -205,7 +205,7 @@ class PPOAlgo(BaseAlgo):
                 
                 self.optimizer0.zero_grad()
                 self.optimizer1.zero_grad()
-                batch_loss0.backward()
+                batch_loss0.backward(retain_graph=True)
                 batch_loss1.backward()
                 grad_norm0 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
                 grad_norm1 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel1.parameters() if p.grad is not None) ** 0.5
