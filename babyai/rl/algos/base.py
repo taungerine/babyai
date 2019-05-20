@@ -88,7 +88,6 @@ class BaseAlgo(ABC):
         shape = (self.num_frames_per_proc, self.num_procs)
         
         self.step_count  = torch.zeros(shape[1], device=self.device, dtype=torch.uint8)
-        self.comm        = torch.zeros(shape[1], device=self.device, dtype=torch.uint8)
         self.comms       = torch.zeros(*shape,   device=self.device, dtype=torch.uint8)
         self.mask        = torch.ones(shape[1],  device=self.device)
         self.masks       = torch.zeros(*shape,   device=self.device)
@@ -164,44 +163,44 @@ class BaseAlgo(ABC):
             with torch.no_grad():
                 
                 if self.use_comm:
-                    self.comm = self.step_count % self.n == 0
+                    comm = self.step_count % self.n == 0
                 
-                    if torch.any(self.comm):
+                    if torch.any(comm):
                         # blind the scout to instructions
-                        preprocessed_globs.instr[self.comm] *= 0
+                        preprocessed_globs.instr[comm] *= 0
                         
-                        model_results0  = self.acmodel0(preprocessed_globs[  self.comm], self.memory0[    self.comm] * self.mask[    self.comm].unsqueeze(1))
+                        model_results0  = self.acmodel0(preprocessed_globs[  comm], self.memory0[    comm] * self.mask[    comm].unsqueeze(1))
                         
-                        self.msg[self.comm] = model_results0['message']
+                        self.msg[comm] = model_results0['message']
                         
-                        model_results1A = self.acmodel1(preprocessed_obs[    self.comm], self.memory1[    self.comm] * self.mask[    self.comm].unsqueeze(1), msg=(self.msg[    self.comm]))
+                        model_results1A = self.acmodel1(preprocessed_obs[    comm], self.memory1[    comm] * self.mask[    comm].unsqueeze(1), msg=(self.msg[    comm]))
                     
-                    if torch.any(1 - self.comm):
-                        model_results1B = self.acmodel1(preprocessed_obs[1 - self.comm], self.memory1[1 - self.comm] * self.mask[1 - self.comm].unsqueeze(1), msg=(self.msg[1 - self.comm]))
+                    if torch.any(1 - comm):
+                        model_results1B = self.acmodel1(preprocessed_obs[1 - comm], self.memory1[1 - comm] * self.mask[1 - comm].unsqueeze(1), msg=(self.msg[1 - comm]))
                 else:
                     model_results1B = self.acmodel1(preprocessed_obs, self.memory1 * self.mask.unsqueeze(1))
                 
-                if torch.any(self.comm):
-                    dists_speaker      = model_results0['dists_speaker']
-                    value0[self.comm]  = model_results0['value']
-                    memory0[self.comm] = model_results0['memory']
+                if torch.any(comm):
+                    dists_speaker = model_results0['dists_speaker']
+                    value0[comm]  = model_results0['value']
+                    memory0[comm] = model_results0['memory']
                     
-                    distA              = model_results1A['dist']
-                    value1[self.comm]  = model_results1A['value']
-                    memory1[self.comm] = model_results1A['memory']
+                    distA         = model_results1A['dist']
+                    value1[comm]  = model_results1A['value']
+                    memory1[comm] = model_results1A['memory']
                     
-                if torch.any(1 - self.comm):
-                    distB                  = model_results1B['dist']
-                    value1[1 - self.comm]  = model_results1B['value']
-                    memory1[1 - self.comm] = model_results1B['memory']
+                if torch.any(1 - comm):
+                    distB             = model_results1B['dist']
+                    value1[1 - comm]  = model_results1B['value']
+                    memory1[1 - comm] = model_results1B['memory']
                     
-            if torch.any(self.comm):
-                actionA           = distA.sample()
-                action[self.comm] = actionA
+            if torch.any(comm):
+                actionA      = distA.sample()
+                action[comm] = actionA
             
-            if torch.any(1 - self.comm):
-                actionB               = distB.sample()
-                action[1 - self.comm] = actionB
+            if torch.any(1 - comm):
+                actionB          = distB.sample()
+                action[1 - comm] = actionB
             
             globs, obs, reward, done, step_count, env_info = self.env.step(action.cpu().numpy())
             
@@ -235,12 +234,12 @@ class BaseAlgo(ABC):
                 ], device=self.device)
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
-            if torch.any(self.comm):
-                self.log_probs0[i,     self.comm] = self.acmodel0.speaker_log_prob(dists_speaker, self.msg[self.comm])
-                self.log_probs1[i,     self.comm] = distA.log_prob(actionA)
-            if torch.any(1 - self.comm):
-                self.log_probs1[i, 1 - self.comm] = distB.log_prob(actionB)
-            self.comms[i] = self.comm
+            if torch.any(comm):
+                self.log_probs0[i,     comm] = self.acmodel0.speaker_log_prob(dists_speaker, self.msg[comm])
+                self.log_probs1[i,     comm] = distA.log_prob(actionA)
+            if torch.any(1 - comm):
+                self.log_probs1[i, 1 - comm] = distB.log_prob(actionB)
+            self.comms[i] = comm
 
             self.msgs[i] = self.msg
 
@@ -271,32 +270,37 @@ class BaseAlgo(ABC):
         
         with torch.no_grad():
             if self.use_comm:
-                self.comm = self.step_count % self.n == 0
+                comm = self.step_count % self.n == 0
                 
-                next_value = torch.zeros(self.num_procs, device=self.device)
+                next_value1 = torch.zeros(self.num_procs, device=self.device)
                 
-                if torch.any(self.comm):
+                if torch.any(comm):
                     # blind the scout to instructions
-                    preprocessed_globs.instr[self.comm] *= 0
+                    preprocessed_globs.instr[comm] *= 0
                     
-                    self.msg[self.comm] = self.acmodel0(preprocessed_globs[self.comm],    self.memory0[self.comm] * self.mask[self.comm].unsqueeze(1))['message']
+                    self.msg[comm] = self.acmodel0(preprocessed_globs[comm],    self.memory0[comm] * self.mask[comm].unsqueeze(1))['message']
                     
-                    next_value[    self.comm] = self.acmodel1(preprocessed_obs[    self.comm], self.memory1[    self.comm] * self.mask[    self.comm].unsqueeze(1), msg=(self.msg[    self.comm]))['value']
+                    next_value1[    comm] = self.acmodel1(preprocessed_obs[    comm], self.memory1[    comm] * self.mask[    comm].unsqueeze(1), msg=(self.msg[    comm]))['value']
                 
-                if torch.any(1 - self.comm):
-                    next_value[1 - self.comm] = self.acmodel1(preprocessed_obs[1 - self.comm], self.memory1[1 - self.comm] * self.mask[1 - self.comm].unsqueeze(1), msg=(self.msg[1 - self.comm]))['value']
+                if torch.any(1 - comm):
+                    next_value1[1 - comm] = self.acmodel1(preprocessed_obs[1 - comm], self.memory1[1 - comm] * self.mask[1 - comm].unsqueeze(1), msg=(self.msg[1 - comm]))['value']
             else:
-                next_value = self.acmodel1(preprocessed_obs, self.memory1 * self.mask.unsqueeze(1))['value']
+                next_value1 = self.acmodel1(preprocessed_obs, self.memory1 * self.mask.unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
-            next_mask      = self.masks[i+1]       if i < self.num_frames_per_proc - 1 else self.mask
-            next_value     = self.values1[i+1]     if i < self.num_frames_per_proc - 1 else next_value
-            next_advantage = self.advantages1[i+1] if i < self.num_frames_per_proc - 1 else 0
-
-            delta0              = self.rewards[i] + self.discount * next_value * next_mask - self.values0[i]
-            delta1              = self.rewards[i] + self.discount * next_value * next_mask - self.values1[i]
-            self.advantages0[i] = delta0 + self.discount * self.gae_lambda * next_advantage * next_mask
-            self.advantages1[i] = delta1 + self.discount * self.gae_lambda * next_advantage * next_mask
+            next_mask       = self.masks[i+1]       if i < self.num_frames_per_proc - 1 else self.mask
+            
+            next_value1     = self.values1[i+1]     if i < self.num_frames_per_proc - 1 else next_value1
+            next_advantage1 = self.advantages1[i+1] if i < self.num_frames_per_proc - 1 else 0
+            
+            delta1              = self.rewards[i] + self.discount * next_value1 * next_mask - self.values1[i]
+            self.advantages1[i] = delta1 + self.discount * self.gae_lambda * next_advantage1 * next_mask
+            
+            next_value0     = self.values1[i]
+            next_advantage0 = self.advantages1[i]
+            
+            delta0              = self.discount * next_value0 - self.values0[i]
+            self.advantages0[i] = delta0 + self.discount * self.gae_lambda * next_advantage0
 
         # Flatten the data correctly, making sure that
         # each episode's data is a continuous chunk
