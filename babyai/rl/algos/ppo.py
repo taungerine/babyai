@@ -35,7 +35,8 @@ class PPOAlgo(BaseAlgo):
     def update_parameters(self):
         # Collect experiences
 
-        exps, logs = self.collect_experiences()
+        exps, logs0 = self.collect_experiences()
+        logs1 = logs0.copy()
         '''
         exps is a DictList with the following keys ['obs', 'memory', 'mask', 'action', 'value', 'reward',
          'advantage', 'returnn', 'log_prob'] and ['collected_info', 'extra_predictions'] if we use aux_info
@@ -52,13 +53,21 @@ class PPOAlgo(BaseAlgo):
         for _ in range(self.epochs):
             # Initialize log values
 
-            log_entropies     = []
-            log_values        = []
-            log_policy_losses = []
-            log_value_losses  = []
-            log_grad_norms    = []
+            log_entropies0     = []
+            log_values0        = []
+            log_policy_losses0 = []
+            log_value_losses0  = []
+            log_grad_norms0    = []
 
-            log_losses = []
+            log_losses0 = []
+            
+            log_entropies1     = []
+            log_values1        = []
+            log_policy_losses1 = []
+            log_value_losses1  = []
+            log_grad_norms1    = []
+            
+            log_losses1 = []
 
             '''
             For each epoch, we create int(total_frames / batch_size + 1) batches, each of size batch_size (except
@@ -116,7 +125,7 @@ class PPOAlgo(BaseAlgo):
                         if torch.any(1 - sb.comm):
                             model_results1B = self.acmodel1(sb.obs[1 - sb.comm], memory1[1 - sb.comm] * sb.mask[1 - sb.comm], msg=(msg[1 - sb.comm]))
                     else:
-                        model_results1B = self.acmodel1(sb.obs, memory1 * sb.mask, msg=msg)
+                        model_results1B = self.acmodel1(sb.obs, memory1 * sb.mask)
                     
                     if torch.any(sb.comm):
                         dists_speaker    = model_results0['dists_speaker']
@@ -133,7 +142,7 @@ class PPOAlgo(BaseAlgo):
                         memory1[1 - sb.comm] = model_results1B['memory']
                     
                     if torch.any(sb.comm):
-                        entropy0                = self.acmodel0.speaker_entropy(dists_speaker).mean()
+                        entropy0                = self.acmodel0.speaker_entropy(dists_speaker).sum() / sb.comm.size(0)
                         entropies1[    sb.comm] = distA.entropy()
                     if torch.any(1 - sb.comm):
                         entropies1[1 - sb.comm] = distB.entropy()
@@ -149,15 +158,14 @@ class PPOAlgo(BaseAlgo):
                         ratio0       = torch.exp(log_prob0[sb.comm] - sb.log_prob0[sb.comm])
                         surr10       = ratio0 * sb.advantage0[sb.comm]
                         surr20       = torch.clamp(ratio0, 1.0 - self.clip_eps, 1.0 + self.clip_eps) * sb.advantage0[sb.comm]
-                        policy_loss0 = -torch.min(surr10, surr20).mean()
+                        policy_loss0 = -torch.min(surr10, surr20).sum() / sb.comm.size(0)
                         
                         value_clipped0 = sb.value0[sb.comm] + torch.clamp(value0[sb.comm] - sb.value0[sb.comm], -self.clip_eps, self.clip_eps)
                         surr10         = (value0[sb.comm] - sb.returnn0[sb.comm]).pow(2)
                         surr20         = (value_clipped0 - sb.returnn0[sb.comm]).pow(2)
-                        value_loss0    = torch.max(surr10, surr20).mean()
+                        value_loss0    = torch.max(surr10, surr20).sum() / sb.comm.size(0)
                         
-                        loss0  = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
-                        loss0 *= sb.comm.nonzero().size(0) / sb.comm.size(0)
+                        loss0 = policy_loss0 - self.entropy_coef * entropy0 + self.value_loss_coef * value_loss0
                         
                         # Update batch values
                         
@@ -205,8 +213,7 @@ class PPOAlgo(BaseAlgo):
                 
                 self.optimizer0.zero_grad()
                 self.optimizer1.zero_grad()
-                batch_loss0.backward(retain_graph=True)
-                batch_loss1.backward()
+                (batch_loss0 + batch_loss1).backward()
                 grad_norm0 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel0.parameters() if p.grad is not None) ** 0.5
                 grad_norm1 = sum(p.grad.data.norm(2) ** 2 for p in self.acmodel1.parameters() if p.grad is not None) ** 0.5
                 torch.nn.utils.clip_grad_norm_(self.acmodel0.parameters(), self.max_grad_norm)
@@ -216,23 +223,37 @@ class PPOAlgo(BaseAlgo):
                 
                 # Update log values
 
-                log_entropies.append(batch_entropy0 + batch_entropy1)
-                log_values.append(batch_value0 + batch_value1)
-                log_policy_losses.append(batch_policy_loss0 + batch_policy_loss1)
-                log_value_losses.append(batch_value_loss0 + batch_value_loss1)
-                log_grad_norms.append(grad_norm0.item() + grad_norm1.item())
-                log_losses.append(batch_loss0.item() + batch_loss1.item())
+                log_entropies0.append(batch_entropy0)
+                log_values0.append(batch_value0)
+                log_policy_losses0.append(batch_policy_loss0)
+                log_value_losses0.append(batch_value_loss0)
+                log_grad_norms0.append(grad_norm0.item())
+                log_losses0.append(batch_loss0.item())
+    
+                log_entropies1.append(batch_entropy1)
+                log_values1.append(batch_value1)
+                log_policy_losses1.append(batch_policy_loss1)
+                log_value_losses1.append(batch_value_loss1)
+                log_grad_norms1.append(grad_norm1.item())
+                log_losses1.append(batch_loss1.item())
 
         # Log some values
 
-        logs["entropy"]     = numpy.mean(log_entropies)
-        logs["value"]       = numpy.mean(log_values)
-        logs["policy_loss"] = numpy.mean(log_policy_losses)
-        logs["value_loss"]  = numpy.mean(log_value_losses)
-        logs["grad_norm"]   = numpy.mean(log_grad_norms)
-        logs["loss"]        = numpy.mean(log_losses)
+        logs0["entropy"]     = numpy.mean(log_entropies0)
+        logs0["value"]       = numpy.mean(log_values0)
+        logs0["policy_loss"] = numpy.mean(log_policy_losses0)
+        logs0["value_loss"]  = numpy.mean(log_value_losses0)
+        logs0["grad_norm"]   = numpy.mean(log_grad_norms0)
+        logs0["loss"]        = numpy.mean(log_losses0)
+        
+        logs1["entropy"]     = numpy.mean(log_entropies1)
+        logs1["value"]       = numpy.mean(log_values1)
+        logs1["policy_loss"] = numpy.mean(log_policy_losses1)
+        logs1["value_loss"]  = numpy.mean(log_value_losses1)
+        logs1["grad_norm"]   = numpy.mean(log_grad_norms1)
+        logs1["loss"]        = numpy.mean(log_losses1)
 
-        return logs, logs
+        return logs0, logs1
 
     def _get_batches_starting_indexes(self):
         """Gives, for each batch, the indexes of the observations given to

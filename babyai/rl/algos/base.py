@@ -278,7 +278,7 @@ class BaseAlgo(ABC):
                     # blind the scout to instructions
                     preprocessed_globs.instr[comm] *= 0
                     
-                    self.msg[comm] = self.acmodel0(preprocessed_globs[comm],    self.memory0[comm] * self.mask[comm].unsqueeze(1))['message']
+                    self.msg[       comm] = self.acmodel0(preprocessed_globs[comm],   self.memory0[    comm] * self.mask[    comm].unsqueeze(1))['message']
                     
                     next_value1[    comm] = self.acmodel1(preprocessed_obs[    comm], self.memory1[    comm] * self.mask[    comm].unsqueeze(1), msg=(self.msg[    comm]))['value']
                 
@@ -299,7 +299,7 @@ class BaseAlgo(ABC):
             next_value0     = self.values1[i]
             next_advantage0 = self.advantages1[i]
             
-            delta0              = self.discount * next_value0 - self.values0[i]
+            delta0              =                   self.discount * next_value0             - self.values0[i]
             self.advantages0[i] = delta0 + self.discount * self.gae_lambda * next_advantage0
 
         # Flatten the data correctly, making sure that
