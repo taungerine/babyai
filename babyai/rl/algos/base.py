@@ -11,8 +11,8 @@ from babyai.rl.utils.supervised_losses import ExtraInfoCollector
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
-    def __init__(self, envs, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, n, aux_info):
+    def __init__(self, envs, acmodel0, acmodel1, frequency, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, aux_info):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -71,7 +71,7 @@ class BaseAlgo(ABC):
         self.preprocess_obss     = preprocess_obss or default_preprocess_obss
         self.reshape_reward      = reshape_reward
         self.use_comm            = use_comm
-        self.n                   = n
+        self.frequency           = frequency
         self.aux_info            = aux_info
 
         # Store helpers values
@@ -163,11 +163,11 @@ class BaseAlgo(ABC):
             with torch.no_grad():
                 
                 if self.use_comm:
-                    comm = self.step_count % self.n == 0
+                    comm = self.step_count % self.frequency == 0
                 
                     if torch.any(comm):
                         # blind the scout to instructions
-                        preprocessed_globs.instr[comm] *= 0
+                        #preprocessed_globs.instr[comm] *= 0
                         
                         model_results0  = self.acmodel0(preprocessed_globs[  comm], self.memory0[    comm] * self.mask[    comm].unsqueeze(1))
                         
@@ -270,13 +270,13 @@ class BaseAlgo(ABC):
         
         with torch.no_grad():
             if self.use_comm:
-                comm = self.step_count % self.n == 0
+                comm = self.step_count % self.frequency == 0
                 
                 next_value1 = torch.zeros(self.num_procs, device=self.device)
                 
                 if torch.any(comm):
                     # blind the scout to instructions
-                    preprocessed_globs.instr[comm] *= 0
+                    #preprocessed_globs.instr[comm] *= 0
                     
                     self.msg[       comm] = self.acmodel0(preprocessed_globs[comm],   self.memory0[    comm] * self.mask[    comm].unsqueeze(1))['message']
                     

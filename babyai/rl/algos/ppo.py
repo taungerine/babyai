@@ -10,15 +10,15 @@ class PPOAlgo(BaseAlgo):
     """The class for the Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
 
-    def __init__(self, envs, acmodel0, acmodel1, n, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
+    def __init__(self, envs, acmodel0, acmodel1, frequency, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
                  gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
                  adam_eps=1e-5, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
                  reshape_reward=None, use_comm=True, aux_info=None):
         num_frames_per_proc = num_frames_per_proc or 128
 
-        super().__init__(envs, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, n,
+        super().__init__(envs, acmodel0, acmodel1, frequency, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+                         value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm,
                          aux_info)
 
         self.clip_eps = clip_eps
@@ -114,7 +114,7 @@ class PPOAlgo(BaseAlgo):
                     
                         if torch.any(sb.comm):
                             # blind the scout to instructions
-                            sb.globs.instr[sb.comm] *= 0
+                            #sb.globs.instr[sb.comm] *= 0
                             
                             model_results0  = self.acmodel0(sb.globs[  sb.comm], memory0[    sb.comm] * sb.mask[    sb.comm], msg_out=msg[sb.comm])
                             
