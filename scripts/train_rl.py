@@ -62,7 +62,7 @@ parser.add_argument("--disc-comm-rl", action="store_true", default=False,
                     help="use discrete instead of continuous communication (RL)")
 parser.add_argument("--tau-init", type=float, default=1.0,
                     help="initial Gumbel temperature (default: 1.0)")
-parser.add_argument("--n", type=int, default=64,
+parser.add_argument("--frequency", type=int, default=64,
                     help="frequency of sender messages")
 args = parser.parse_args()
 
@@ -138,7 +138,7 @@ if torch.cuda.is_available():
 
 reshape_reward = lambda _0, _1, reward, _2: args.reward_scale * reward
 if args.algo == "ppo":
-    algo = babyai.rl.PPOAlgo(envs, acmodel0, acmodel1, args.n, args.frames_per_proc, args.discount, args.lr, args.beta1, args.beta2,
+    algo = babyai.rl.PPOAlgo(envs, acmodel0, acmodel1, args.frequency, args.frames_per_proc, args.discount, args.lr, args.beta1, args.beta2,
                               args.gae_lambda,
                               args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                               args.optim_eps, args.clip_eps, args.ppo_epochs, args.batch_size, obss_preprocessor,
