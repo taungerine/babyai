@@ -10,17 +10,17 @@ class PPOAlgo(BaseAlgo):
     """The class for the Proximal Policy Optimization algorithm
     ([Schulman et al., 2015](https://arxiv.org/abs/1707.06347))."""
 
-    def __init__(self, envs0, envs1, acmodel0, acmodel1, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
+    def __init__(self, envs, acmodel0, acmodel1, frequency, num_frames_per_proc=None, discount=0.99, lr=7e-4, beta1=0.9, beta2=0.999,
                  gae_lambda=0.95,
                  entropy_coef=0.01, value_loss_coef=0.5, max_grad_norm=0.5, recurrence=4,
                  adam_eps=1e-5, clip_eps=0.2, epochs=4, batch_size=256, preprocess_obss=None,
                  reshape_reward=None, use_comm=True, aux_info=None):
         num_frames_per_proc = num_frames_per_proc or 128
 
-        super().__init__(envs0, envs1, acmodel0, acmodel1, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+        super().__init__(envs, acmodel0, acmodel1, frequency, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
                          value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm,
                          aux_info)
-
+        
         self.clip_eps = clip_eps
         self.epochs = epochs
         self.batch_size = batch_size
@@ -79,9 +79,10 @@ class PPOAlgo(BaseAlgo):
                 batch_loss        = 0
 
                 # Initialize
-                value  = torch.zeros(inds.shape[0], device=self.device)
-                memory = exps.memory[inds]
-                msg    = exps.message[inds]
+                value   = torch.zeros(inds.shape[0], device=self.device)
+                memory0 = exps.memory0[inds]
+                memory1 = exps.memory1[inds]
+                msg     = exps.message[inds]
                 
                 entropies = torch.zeros(inds.shape[0], device=self.device)
                 log_prob  = torch.zeros(inds.shape[0], device=self.device)
@@ -96,26 +97,26 @@ class PPOAlgo(BaseAlgo):
                         # blind the scout to instructions
                         #sb.globs.instr[sb.scouting] *= 0
                         
-                        model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory[    sb.scouting] * sb.mask[    sb.scouting], msg_out=sb.message_out[sb.scouting])
+                        model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory0[    sb.scouting] * sb.mask2[    sb.scouting], msg_out=sb.message_out[sb.scouting])
                     
                     if torch.any(1 - sb.scouting):
                         
                         if self.use_comm:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask2[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
                         else:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory[1 - sb.scouting] * sb.mask[1 - sb.scouting])
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask2[1 - sb.scouting])
                     
                     if torch.any(sb.scouting):
-                        dist0               = model_results0['dist']
-                        value[sb.scouting]  = model_results0['value']
-                        memory[sb.scouting] = model_results0['memory']
-                        msg[sb.scouting]    = model_results0['message']
-                        dists_speaker       = model_results0['dists_speaker']
+                        dist0                = model_results0['dist']
+                        value[sb.scouting]   = model_results0['value']
+                        memory0[sb.scouting] = model_results0['memory']
+                        msg[sb.scouting]     = model_results0['message']
+                        dists_speaker        = model_results0['dists_speaker']
                     
                     if torch.any(1 - sb.scouting):
-                        dist1                   = model_results1['dist']
-                        value[1 - sb.scouting]  = model_results1['value']
-                        memory[1 - sb.scouting] = model_results1['memory']
+                        dist1                    = model_results1['dist']
+                        value[1 - sb.scouting]   = model_results1['value']
+                        memory1[1 - sb.scouting] = model_results1['memory']
                     
                     if torch.any(sb.scouting):
                         #entropies[sb.scouting]     = dist0.entropy()
@@ -149,12 +150,6 @@ class PPOAlgo(BaseAlgo):
                     batch_policy_loss += policy_loss.item()
                     batch_value_loss  += value_loss.item()
                     batch_loss        += loss
-
-                    # Update memories for next epoch
-                        
-                    #    exps.memory[inds + i + 1] = memory.detach()
-                
-                    #    exps.message[inds + i + 1] = msg.detach()
 
                 # Update batch values
                 
