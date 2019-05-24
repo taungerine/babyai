@@ -62,21 +62,18 @@ parser.add_argument("--disc-comm-rl", action="store_true", default=False,
                     help="use discrete instead of continuous communication (RL)")
 parser.add_argument("--tau-init", type=float, default=1.0,
                     help="initial Gumbel temperature (default: 1.0)")
+parser.add_argument("--frequency", type=int, default=64,
+                    help="frequency of sender messages")
 args = parser.parse_args()
 
 utils.seed(args.seed)
 
 # Generate environments
-envs0 = []
-envs1 = []
+envs = []
 for i in range(args.procs):
-    env0 = gym.make(args.env)
-    env0.seed(100 * args.seed + i)
-    envs0.append(env0)
-    
-    env1 = gym.make(args.env)
-    env1.seed(100 * args.seed + i)
-    envs1.append(env1)
+    env = gym.make(args.env)
+    env.seed(100 * args.seed + i)
+    envs.append(env)
 
 # Define model name
 suffix = datetime.datetime.now().strftime("%y-%m-%d-%H-%M-%S")
@@ -103,9 +100,9 @@ logger1 = logging.getLogger(__name__ + "1")
 
 # Define obss preprocessor
 if 'emb' in args.arch:
-    obss_preprocessor = utils.IntObssPreprocessor(args.model, envs0[0].observation_space, args.pretrained_model)
+    obss_preprocessor = utils.IntObssPreprocessor(args.model, envs[0].observation_space, args.pretrained_model)
 else:
-    obss_preprocessor = utils.ObssPreprocessor(args.model, envs0[0].observation_space, args.pretrained_model)
+    obss_preprocessor = utils.ObssPreprocessor(args.model, envs[0].observation_space, args.pretrained_model)
 
 # Define actor-critic model
 acmodel0 = utils.load_model(args.model, 0, raise_not_found=False)
@@ -115,7 +112,7 @@ if acmodel0 is None:
         acmodel0 = utils.load_model(args.pretrained_model, 0, raise_not_found=True)
     else:
         #torch.manual_seed(args.seed)
-        acmodel0 = ACModel(obss_preprocessor.obs_space, envs0[0].action_space,
+        acmodel0 = ACModel(obss_preprocessor.obs_space, envs[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
                            args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm, args.disc_comm_rl, args.tau_init)
@@ -124,7 +121,7 @@ if acmodel1 is None:
         acmodel1 = utils.load_model(args.pretrained_model, 1, raise_not_found=True)
     else:
         #torch.manual_seed(args.seed)
-        acmodel1 = ACModel(obss_preprocessor.obs_space, envs1[0].action_space,
+        acmodel1 = ACModel(obss_preprocessor.obs_space, envs[0].action_space,
                            args.image_dim, args.memory_dim, args.instr_dim, args.enc_dim, args.dec_dim,
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
                            args.len_message, args.num_symbols, args.num_layers, False, args.disc_comm, args.disc_comm_rl, args.tau_init)
@@ -141,7 +138,7 @@ if torch.cuda.is_available():
 
 reshape_reward = lambda _0, _1, reward, _2: args.reward_scale * reward
 if args.algo == "ppo":
-    algo = babyai.rl.PPOAlgo(envs0, envs1, acmodel0, acmodel1, args.frames_per_proc, args.discount, args.lr, args.beta1, args.beta2,
+    algo = babyai.rl.PPOAlgo(envs, acmodel0, acmodel1, args.frequency, args.frames_per_proc, args.discount, args.lr, args.beta1, args.beta2,
                               args.gae_lambda,
                               args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                               args.optim_eps, args.clip_eps, args.ppo_epochs, args.batch_size, obss_preprocessor,
