@@ -246,7 +246,7 @@ class BaseAlgo(ABC):
             
             self.log_episode_return          += torch.tensor(reward, device=self.device, dtype=torch.float)
             self.log_episode_reshaped_return += self.rewards[i]
-            self.log_episode_num_frames      += torch.ones(self.num_procs, device=self.device)
+            self.log_episode_num_frames      += torch.ones(self.num_procs, device=self.device) - self.scouting.float()
             
             for i, done_ in enumerate(done):
                 if done_ and not self.scouting[i]:
