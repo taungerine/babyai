@@ -286,13 +286,14 @@ class BaseAlgo(ABC):
             next_value     = self.values[i+1]     if i < self.num_frames_per_proc - 1 else next_value
             next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
             
-            if i < self.num_frames_per_proc - 2:
-                if torch.any(self.scoutings[i+1]):
-                    next_value[    self.scoutings[i+1]] = self.values[    i+2][self.scoutings[i+1]]
-                    next_advantage[self.scoutings[i+1]] = self.advantages[i+2][self.scoutings[i+1]]
-            
             delta              = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
             self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
+            
+            if i < self.num_frames_per_proc - 2:
+                if torch.any(self.scoutings[i+1]):
+                    next_value = self.values[    i+2][self.scoutings[i+1]]
+                    delta              = self.rewards[i][self.scoutings[i+1]] + self.discount * next_value * next_mask[self.scoutings[i+1]] - self.values[i][self.scoutings[i+1]]
+                    self.advantages[i][self.scoutings[i+1]] = delta + self.discount * self.gae_lambda * self.advantages[i+2][self.scoutings[i+1]] * next_mask[self.scoutings[i+1]]
 
         # Flatten the data correctly, making sure that
         # each episode's data is a continuous chunk
