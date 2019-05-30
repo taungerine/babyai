@@ -163,7 +163,10 @@ if os.path.exists(status_path):
 else:
     status = {'i': 0,
               'num_episodes': 0,
-              'num_frames': 0}
+              'num_frames':   0,
+              'num_frames0':  0,
+              'num_frames1':  0,
+}
 
 # Define loggers and Tensorboard writer and CSV writers
 
@@ -239,6 +242,8 @@ while status['num_frames'] < args.frames:
     update_end_time   = time.time()
 
     status['num_frames']   += logs0["num_frames"] + logs1["num_frames"]
+    status['num_frames0']  += logs0["num_frames"]
+    status['num_frames1']  += logs1["num_frames"]
     status['num_episodes'] += logs0['episodes_done']
     status['i'] += 1
 
@@ -262,7 +267,7 @@ while status['num_frames'] < args.frames:
         
         num_frames_per_episode1 = utils.synthesize(logs1["num_frames_per_episode"])
 
-        data0 = [status['i'], status['num_episodes'], logs0["num_frames"],
+        data0 = [status['i'], status['num_episodes'], logs0['num_frames0'],
                  fps0, total_ellapsed_time,
                  *return_per_episode0.values(),
                  success_per_episode0['mean'],
@@ -270,7 +275,7 @@ while status['num_frames'] < args.frames:
                  logs0["entropy"], logs0["value"], logs0["policy_loss"], logs0["value_loss"],
                  logs0["loss"], logs0["grad_norm"]]
         
-        data1 = [status['i'], status['num_episodes'], logs1["num_frames"],
+        data1 = [status['i'], status['num_episodes'], logs1['num_frames0'],
                  fps1, total_ellapsed_time,
                  *return_per_episode1.values(),
                  success_per_episode1['mean'],
