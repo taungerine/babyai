@@ -112,7 +112,7 @@ class PPOAlgo(BaseAlgo):
                     if torch.any(sb.scouting):
                         if self.ignorant_scout:
                             # blind the scout to instructions
-                            preprocessed_globs.instr[self.scouting] *= 0
+                            sb.globs.instr[sb.scouting] *= 0
                         
                         model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory0[    sb.scouting] * sb.mask2[    sb.scouting], msg_out=sb.message_out[sb.scouting])
                     
