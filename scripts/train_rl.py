@@ -275,7 +275,7 @@ while status['num_frames'] < args.frames:
                  logs0["entropy"], logs0["value"], logs0["policy_loss"], logs0["value_loss"],
                  logs0["loss"], logs0["grad_norm"]]
         
-        data1 = [status['i'], status['num_episodes'], logs1['num_frames0'],
+        data1 = [status['i'], status['num_episodes'], status['num_frames0'],
                  fps1, total_ellapsed_time,
                  *return_per_episode1.values(),
                  success_per_episode1['mean'],
