@@ -267,7 +267,7 @@ while status['num_frames'] < args.frames:
         
         num_frames_per_episode1 = utils.synthesize(logs1["num_frames_per_episode"])
 
-        data0 = [status['i'], status['num_episodes'], logs0['num_frames0'],
+        data0 = [status['i'], status['num_episodes'], status['num_frames0'],
                  fps0, total_ellapsed_time,
                  *return_per_episode0.values(),
                  success_per_episode0['mean'],
