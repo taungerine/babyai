@@ -64,6 +64,8 @@ parser.add_argument("--tau-init", type=float, default=1.0,
                     help="initial Gumbel temperature (default: 1.0)")
 parser.add_argument("--frequency", type=int, default=64,
                     help="frequency of sender messages")
+parser.add_argument("--ignorant-scout", action="store_true", default=False,
+                    help="blinds the sender to the instruction")
 args = parser.parse_args()
 
 utils.seed(args.seed)
@@ -142,7 +144,7 @@ if args.algo == "ppo":
                               args.gae_lambda,
                               args.entropy_coef, args.value_loss_coef, args.max_grad_norm, args.recurrence,
                               args.optim_eps, args.clip_eps, args.ppo_epochs, args.batch_size, obss_preprocessor,
-                              reshape_reward, not args.no_comm)
+                              reshape_reward, not args.no_comm, args.ignorant_scout)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
@@ -236,7 +238,7 @@ while status['num_frames'] < args.frames:
     logs0, logs1      = algo.update_parameters()
     update_end_time   = time.time()
 
-    status['num_frames']   += logs0["num_frames"]
+    status['num_frames']   += logs0["num_frames"] + logs1["num_frames"]
     status['num_episodes'] += logs0['episodes_done']
     status['i'] += 1
 
@@ -244,7 +246,8 @@ while status['num_frames'] < args.frames:
 
     if status['i'] % args.log_interval == 0:
         total_ellapsed_time = int(time.time() - total_start_time)
-        fps                 = logs0["num_frames"] / (update_end_time - update_start_time)
+        fps0                = logs0["num_frames"] / (update_end_time - update_start_time)
+        fps1                = logs1["num_frames"] / (update_end_time - update_start_time)
         duration            = datetime.timedelta(seconds=total_ellapsed_time)
         
         return_per_episode0     = utils.synthesize(logs0["return_per_episode"])
@@ -259,16 +262,16 @@ while status['num_frames'] < args.frames:
         
         num_frames_per_episode1 = utils.synthesize(logs1["num_frames_per_episode"])
 
-        data0 = [status['i'], status['num_episodes'], status['num_frames'],
-                 fps, total_ellapsed_time,
+        data0 = [status['i'], status['num_episodes'], logs0["num_frames"],
+                 fps0, total_ellapsed_time,
                  *return_per_episode0.values(),
                  success_per_episode0['mean'],
                  *num_frames_per_episode0.values(),
                  logs0["entropy"], logs0["value"], logs0["policy_loss"], logs0["value_loss"],
                  logs0["loss"], logs0["grad_norm"]]
         
-        data1 = [status['i'], status['num_episodes'], status['num_frames'],
-                 fps, total_ellapsed_time,
+        data1 = [status['i'], status['num_episodes'], logs1["num_frames"],
+                 fps1, total_ellapsed_time,
                  *return_per_episode1.values(),
                  success_per_episode1['mean'],
                  *num_frames_per_episode1.values(),
