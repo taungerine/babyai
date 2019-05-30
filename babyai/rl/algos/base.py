@@ -375,6 +375,8 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
         self.log_num_frames0     = self.log_num_frames0[-self.num_procs:]
         self.log_num_frames1     = self.log_num_frames1[-self.num_procs:]
+        self.num_frames0         = 0
+        self.num_frames1         = 0
 
         return exps, log0, log1
 
