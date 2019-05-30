@@ -12,7 +12,7 @@ class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
     def __init__(self, envs, acmodel0, acmodel1, frequency, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
-                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, aux_info):
+                 value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, ignorant_scout, aux_info):
         """
         Initializes a `BaseAlgo` instance.
 
@@ -71,14 +71,17 @@ class BaseAlgo(ABC):
         self.preprocess_obss     = preprocess_obss or default_preprocess_obss
         self.reshape_reward      = reshape_reward
         self.use_comm            = use_comm
+        self.ignorant_scout      = ignorant_scout
         self.frequency           = frequency
         self.aux_info            = aux_info
 
         # Store helpers values
 
-        self.device     = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.num_procs  = len(envs)
-        self.num_frames = self.num_frames_per_proc * self.num_procs
+        self.device      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.num_procs   = len(envs)
+        self.num_frames  = self.num_frames_per_proc * self.num_procs
+        self.num_frames0 = 0
+        self.num_frames1 = 0
 
 
         assert self.num_frames_per_proc % self.recurrence == 0
@@ -99,7 +102,6 @@ class BaseAlgo(ABC):
         self.advantages = torch.zeros(*shape,   device=self.device)
         self.log_probs  = torch.zeros(*shape,   device=self.device)
 
-        #self.globs, self.obs, reward, done, step_count = self.env.reset(self.scouting.cpu().numpy())
         self.globs, self.obs, reward, done, step_count = self.env.reset(self.scouting.cpu().numpy())
         self.globss          = [None]*(shape[0])
         self.obss            = [None]*(shape[0])
@@ -124,12 +126,14 @@ class BaseAlgo(ABC):
 
         self.log_episode_return          = torch.zeros(self.num_procs, device=self.device)
         self.log_episode_reshaped_return = torch.zeros(self.num_procs, device=self.device)
-        self.log_episode_num_frames      = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_num_frames0     = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_num_frames1     = torch.zeros(self.num_procs, device=self.device)
 
         self.log_done_counter    = 0
         self.log_return          = [0] * self.num_procs
         self.log_reshaped_return = [0] * self.num_procs
-        self.log_num_frames      = [0] * self.num_procs
+        self.log_num_frames0     = [0] * self.num_procs
+        self.log_num_frames1     = [0] * self.num_procs
 
     def collect_experiences(self):
         """Collects rollouts and computes advantages.
@@ -168,8 +172,9 @@ class BaseAlgo(ABC):
                 self.scouting = (self.step_count % self.frequency == 0) * (1 - self.scouting)
                 
                 if torch.any(self.scouting):
-                    # blind the scout to instructions
-                    #preprocessed_globs.instr[self.scouting] *= 0
+                    if self.ignorant_scout:
+                        # blind the scout to instructions
+                        preprocessed_globs.instr[self.scouting] *= 0
                     
                     model_results0 = self.acmodel0(preprocessed_globs[    self.scouting], self.memory0[    self.scouting] * self.mask2[    self.scouting].unsqueeze(1))
                 
@@ -246,18 +251,24 @@ class BaseAlgo(ABC):
             
             self.log_episode_return          += torch.tensor(reward, device=self.device, dtype=torch.float)
             self.log_episode_reshaped_return += self.rewards[i]
-            self.log_episode_num_frames      += torch.ones(self.num_procs, device=self.device) - self.scouting.float()
+            self.log_episode_num_frames0     += self.scouting.float()
+            self.log_episode_num_frames1     += torch.ones(self.num_procs, device=self.device) - self.scouting.float()
+            
+            self.num_frames0 +=     (self.scouting).sum().item()
+            self.num_frames1 += (1 - self.scouting).sum().item()
             
             for i, done_ in enumerate(done):
                 if done_ and not self.scouting[i]:
                     self.log_done_counter += 1
                     self.log_return.append(self.log_episode_return[i].item())
                     self.log_reshaped_return.append(self.log_episode_reshaped_return[i].item())
-                    self.log_num_frames.append(self.log_episode_num_frames[i].item())
+                    self.log_num_frames0.append(self.log_episode_num_frames0[i].item())
+                    self.log_num_frames1.append(self.log_episode_num_frames1[i].item())
 
             self.log_episode_return          *= self.mask2
             self.log_episode_reshaped_return *= self.mask2
-            self.log_episode_num_frames      *= self.mask2
+            self.log_episode_num_frames0     *= self.mask2
+            self.log_episode_num_frames1     *= self.mask2
 
         # Add advantage and return to experiences
 
@@ -271,8 +282,9 @@ class BaseAlgo(ABC):
             self.scouting = (self.step_count % self.frequency == 0) * (1 - self.scouting)
             
             if torch.any(self.scouting):
-                # blind the scout to instructions
-                #preprocessed_globs.instr[self.scouting] *= 0
+                if self.ignorant_scout:
+                    # blind the scout to instructions
+                    preprocessed_globs.instr[self.scouting] *= 0
                 
                 self.msg[self.scouting] = self.acmodel0(preprocessed_globs[self.scouting], self.memory0[self.scouting] * self.mask2[self.scouting].unsqueeze(1))['message']
                 
@@ -342,20 +354,29 @@ class BaseAlgo(ABC):
 
         keep = max(self.log_done_counter, self.num_procs)
 
-        log = {
+        log0 = {
             "return_per_episode":          self.log_return[-keep:],
             "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
-            "num_frames_per_episode":      self.log_num_frames[-keep:],
-            "num_frames":                  self.num_frames,
+            "num_frames_per_episode":      self.log_num_frames0[-keep:],
+            "num_frames":                  self.num_frames0,
+            "episodes_done":               self.log_done_counter,
+        }
+
+        log1 = {
+            "return_per_episode":          self.log_return[-keep:],
+            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
+            "num_frames_per_episode":      self.log_num_frames1[-keep:],
+            "num_frames":                  self.num_frames1,
             "episodes_done":               self.log_done_counter,
         }
 
         self.log_done_counter    = 0
         self.log_return          = self.log_return[-self.num_procs:]
         self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
-        self.log_num_frames      = self.log_num_frames[-self.num_procs:]
+        self.log_num_frames0     = self.log_num_frames0[-self.num_procs:]
+        self.log_num_frames1     = self.log_num_frames1[-self.num_procs:]
 
-        return exps, log
+        return exps, log0, log1
 
     @abstractmethod
     def update_parameters(self):
