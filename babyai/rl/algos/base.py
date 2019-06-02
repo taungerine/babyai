@@ -11,7 +11,7 @@ from babyai.rl.utils.supervised_losses import ExtraInfoCollector
 class BaseAlgo(ABC):
     """The base class for RL algorithms."""
 
-    def __init__(self, envs, acmodel0, acmodel1, frequency, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
+    def __init__(self, envs, acmodel0, acmodel1, n, num_frames_per_proc, discount, lr, gae_lambda, entropy_coef,
                  value_loss_coef, max_grad_norm, recurrence, preprocess_obss, reshape_reward, use_comm, ignorant_scout, aux_info):
         """
         Initializes a `BaseAlgo` instance.
@@ -72,7 +72,7 @@ class BaseAlgo(ABC):
         self.reshape_reward      = reshape_reward
         self.use_comm            = use_comm
         self.ignorant_scout      = ignorant_scout
-        self.frequency           = frequency
+        self.n                   = n
         self.aux_info            = aux_info
 
         # Store helpers values
@@ -168,8 +168,8 @@ class BaseAlgo(ABC):
             preprocessed_obs   = self.preprocess_obss(self.obs,   device=self.device)
             
             with torch.no_grad():
-                # scout if step_count % frequency == 0, except if previous step was already scouting
-                self.scouting = (self.step_count % self.frequency == 0) * (1 - self.scouting)
+                # scout if step_count % n == 0, except if previous step was already scouting
+                self.scouting = (self.step_count % self.n == 0) * (1 - self.scouting)
                 
                 if torch.any(self.scouting):
                     if self.ignorant_scout:
@@ -278,8 +278,8 @@ class BaseAlgo(ABC):
         with torch.no_grad():
             next_value = torch.zeros(self.num_procs, device=self.device)
             
-            # scout if step_count % frequency == 0, except if previous step was already scouting
-            self.scouting = (self.step_count % self.frequency == 0) * (1 - self.scouting)
+            # scout if step_count % n == 0, except if previous step was already scouting
+            self.scouting = (self.step_count % self.n == 0) * (1 - self.scouting)
             
             if torch.any(self.scouting):
                 if self.ignorant_scout:
