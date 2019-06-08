@@ -23,6 +23,29 @@ from babyai.model import ACModel
 from babyai.evaluate import batch_evaluate
 from babyai.utils.agent import ModelAgent
 
+# three functions that should be in babyai/utils/model.py, but that doesn't seem to work
+def get_optimizer_path(model_name, n):
+    return os.path.join(utils.get_model_dir(model_name), "optimizer" + str(n) + ".pt")
+
+
+def load_optimizer(model_name, n, raise_not_found=True):
+    path = get_optimizer_path(model_name, n)
+    try:
+        if not torch.cuda.is_available():
+            optimizer = torch.load(path, map_location='cpu')
+        else:
+            optimizer = torch.load(path)
+        return optimizer
+    except FileNotFoundError:
+        if raise_not_found:
+            raise FileNotFoundError("No optimizer found at {}".format(path))
+
+
+def save_optimizer(optimizer, model_name, n):
+    path = get_optimizer_path(model_name, n)
+    utils.create_folders_if_necessary(path)
+    torch.save(optimizer, path)
+
 
 # Parse arguments
 parser = ArgumentParser()
@@ -106,10 +129,13 @@ if 'emb' in args.arch:
 else:
     obss_preprocessor = utils.ObssPreprocessor(args.model, envs[0].observation_space, args.pretrained_model)
 
+loading_flag = True
+
 # Define actor-critic model
 acmodel0 = utils.load_model(args.model, 0, raise_not_found=False)
 acmodel1 = utils.load_model(args.model, 1, raise_not_found=False)
 if acmodel0 is None:
+    loading_flag = False
     if args.pretrained_model:
         acmodel0 = utils.load_model(args.pretrained_model, 0, raise_not_found=True)
     else:
@@ -119,6 +145,7 @@ if acmodel0 is None:
                            not args.no_instr, args.instr_arch, not args.no_mem, args.arch,
                            args.len_message, args.num_symbols, args.num_layers, args.all_angles, args.disc_comm, args.disc_comm_rl, args.tau_init)
 if acmodel1 is None:
+    loading_flag = False
     if args.pretrained_model:
         acmodel1 = utils.load_model(args.pretrained_model, 1, raise_not_found=True)
     else:
@@ -147,6 +174,13 @@ if args.algo == "ppo":
                               reshape_reward, not args.no_comm, args.ignorant_scout)
 else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
+
+if loading_flag:
+    algo.optimizer0 = load_optimizer(args.model, 0, raise_not_found=False)
+    algo.optimizer1 = load_optimizer(args.model, 1, raise_not_found=False)
+else:
+    save_optimizer(algo.optimizer0, args.model, 0)
+    save_optimizer(algo.optimizer1, args.model, 1)
 
 # When using extra binary information, more tensors (model params) are initialized compared to when we don't use that.
 # Thus, there starts to be a difference in the random state. If we want to avoid it, in order to make sure that
@@ -313,6 +347,8 @@ while status['num_frames'] < args.frames:
             json.dump(status, dst)
             utils.save_model(acmodel0, args.model, 0)
             utils.save_model(acmodel1, args.model, 1)
+            save_optimizer(algo.optimizer0, args.model, 0)
+            save_optimizer(algo.optimizer1, args.model, 1)
 
         # Testing the models before saving
         #agent0        = ModelAgent(args.model, obss_preprocessor, argmax=True)
