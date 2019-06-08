@@ -8,7 +8,7 @@ def get_global(env):
     grid = env.grid
     
     # position agent
-    x, y = env.start_pos
+    x, y = env.agent_pos
     
     # rotate to match agent's orientation
     for i in range(env.agent_dir + 1):
