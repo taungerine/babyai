@@ -119,9 +119,9 @@ class PPOAlgo(BaseAlgo):
                     if torch.any(1 - sb.scouting):
                         
                         if self.use_comm:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask2[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask3[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
                         else:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask2[1 - sb.scouting])
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask3[1 - sb.scouting])
                     
                     if torch.any(sb.scouting):
                         value[sb.scouting]   = model_results0['value']

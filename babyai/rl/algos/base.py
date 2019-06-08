@@ -96,6 +96,8 @@ class BaseAlgo(ABC):
         self.masks      = torch.zeros(*shape,   device=self.device)
         self.mask2      = torch.ones(shape[1],  device=self.device)
         self.masks2     = torch.zeros(*shape,   device=self.device)
+        self.mask3      = torch.ones(shape[1],  device=self.device)
+        self.masks3     = torch.zeros(*shape,   device=self.device)
         self.actions    = torch.zeros(*shape,   device=self.device, dtype=torch.int)
         self.values     = torch.zeros(*shape,   device=self.device)
         self.rewards    = torch.zeros(*shape,   device=self.device)
@@ -181,9 +183,9 @@ class BaseAlgo(ABC):
                 if torch.any(1 - self.scouting):
                     
                     if self.use_comm:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory1[1 - self.scouting] * self.mask2[1 - self.scouting].unsqueeze(1), msg=self.msg[1 - self.scouting])
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory1[1 - self.scouting] * self.mask3[1 - self.scouting].unsqueeze(1), msg=self.msg[1 - self.scouting])
                     else:
-                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory1[1 - self.scouting] * self.mask2[1 - self.scouting].unsqueeze(1))
+                        model_results1 = self.acmodel1(preprocessed_obs[1 - self.scouting], self.memory1[1 - self.scouting] * self.mask3[1 - self.scouting].unsqueeze(1))
                 
                 if torch.any(self.scouting):
                     dist0                  = model_results0['dist']
@@ -223,7 +225,10 @@ class BaseAlgo(ABC):
 
             self.masks[i]   = self.mask
             self.masks2[i]  = self.mask2
+            self.masks3[i]  = self.mask3
             self.mask       = 1 - torch.tensor(done, device=self.device, dtype=torch.float)
+            self.mask3      = 1 - torch.tensor(done, device=self.device, dtype=torch.float) * (1 - self.scouting).float()
+            self.mask3[self.scouting] *= self.mask2[self.scouting]
             self.mask2      = 1 - torch.tensor(done, device=self.device, dtype=torch.float) * (1 - self.scouting).float()
             self.step_count =     torch.tensor(step_count, device=self.device)
             self.actions[i] = action
@@ -289,9 +294,9 @@ class BaseAlgo(ABC):
                 self.msg[self.scouting] = self.acmodel0(preprocessed_globs[self.scouting], self.memory0[self.scouting] * self.mask2[self.scouting].unsqueeze(1))['message']
                 
             if self.use_comm:
-                next_value = self.acmodel1(preprocessed_obs, self.memory1 * self.mask2.unsqueeze(1), msg=self.msg)['value']
+                next_value = self.acmodel1(preprocessed_obs, self.memory1 * self.mask3.unsqueeze(1), msg=self.msg)['value']
             else:
-                next_value = self.acmodel1(preprocessed_obs, self.memory1 * self.mask2.unsqueeze(1))['value']
+                next_value = self.acmodel1(preprocessed_obs, self.memory1 * self.mask3.unsqueeze(1))['value']
 
         for i in reversed(range(self.num_frames_per_proc)):
             next_mask      = self.masks2[i+1]     if i < self.num_frames_per_proc - 1 else self.mask2
@@ -332,6 +337,7 @@ class BaseAlgo(ABC):
         
         # T x P -> P x T -> (P * T) x 1
         exps.mask2 = self.masks2.transpose(0, 1).reshape(-1).unsqueeze(1)
+        exps.mask3 = self.masks3.transpose(0, 1).reshape(-1).unsqueeze(1)
 
         # for all tensors below, T x P -> P x T -> P * T
         exps.scouting         = self.scoutings.transpose(0, 1).reshape(-1)
