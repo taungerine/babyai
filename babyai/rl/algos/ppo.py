@@ -114,14 +114,14 @@ class PPOAlgo(BaseAlgo):
                             # blind the scout to instructions
                             sb.globs.instr[sb.scouting] *= 0
                         
-                        model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory0[    sb.scouting] * sb.mask2[    sb.scouting], msg_out=sb.message_out[sb.scouting])
+                        model_results0 = self.acmodel0(sb.globs[    sb.scouting], memory0[    sb.scouting] * sb.mask0[    sb.scouting], msg_out=sb.message_out[sb.scouting])
                     
                     if torch.any(1 - sb.scouting):
                         
                         if self.use_comm:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask3[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask1[1 - sb.scouting], msg=(msg[1 - sb.scouting]))
                         else:
-                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask3[1 - sb.scouting])
+                            model_results1 = self.acmodel1(sb.obs[1 - sb.scouting], memory1[1 - sb.scouting] * sb.mask1[1 - sb.scouting])
                     
                     if torch.any(sb.scouting):
                         value[sb.scouting]   = model_results0['value']
