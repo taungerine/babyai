@@ -91,6 +91,8 @@ parser.add_argument("--n", type=int, default=64,
                     help="period of sender messages (default: 64)")
 parser.add_argument("--ignorant-scout", action="store_true", default=False,
                     help="blinds the sender to the instruction")
+parser.add_argument("--one-update", action="store_true", default=False,
+                    help="only do one update")
 args = parser.parse_args()
 
 utils.seed(args.seed)
@@ -382,3 +384,6 @@ while status['num_frames'] < args.frames:
         #    logger1.info("Return {: .2f}; best model is saved".format(mean_return))
         #else:
         #    logger1.info("Return {: .2f}; not the best model; not saved".format(mean_return))
+
+    if args.one_update:
+        break
