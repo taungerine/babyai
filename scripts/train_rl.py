@@ -341,8 +341,9 @@ while status['num_frames'] < args.frames:
             for key, value in zip(header, data1):
                 writer1.add_scalar(key, float(value), status['num_frames'])
 
-        csv_writer0.writerow(data0)
-        csv_writer1.writerow(data1)
+        if not args.one_update:
+            csv_writer0.writerow(data0)
+            csv_writer1.writerow(data1)
 
     # Save obss preprocessor vocabulary and models
     if args.save_interval > 0 and status['i'] % args.save_interval == 0:
