@@ -656,7 +656,7 @@ class Level_GoToObjCustom(RoomGridLevel):
     def gen_mission(self):
         self.place_agent()
         objs = self.add_distractors(num_distractors=2)
-        obj = self._rand_elem(objs)
+        obj  = self._rand_elem(objs)
         
         self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
 
@@ -671,6 +671,27 @@ class Level_GoToObjCustom(RoomGridLevel):
         #    color = None
 
         #self.instrs = PickupInstr(ObjDesc(type, color), strict=self.debug)
+
+
+class Level_GoToObjCustom3(RoomGridLevel):
+    """
+        Go to an object, inside a single room with no doors
+        """
+    
+    def __init__(self, room_size=8, seed=None):
+        super().__init__(
+            num_rows=1,
+            num_cols=1,
+            room_size=room_size,
+            seed=seed
+        )
+    
+    def gen_mission(self):
+        self.place_agent()
+        objs = self.add_distractors(num_distractors=3)
+        obj  = self._rand_elem(objs)
+        
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
 
 
 class Level_GoToObjCustomBig(RoomGridLevel):
