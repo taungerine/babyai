@@ -180,8 +180,11 @@ else:
     raise ValueError("Incorrect algorithm name: {}".format(args.algo))
 
 if loading_flag:
-    algo.optimizer0 = load_optimizer(args.model, 0, raise_not_found=False)
-    algo.optimizer1 = load_optimizer(args.model, 1, raise_not_found=False)
+    algo.optimizer0.load_state_dict(load_optimizer(args.model, 0, raise_not_found=False).state_dict())
+    algo.optimizer1.load_state_dict(load_optimizer(args.model, 1, raise_not_found=False).state_dict())
+    
+    #algo.optimizer0 = load_optimizer(args.model, 0, raise_not_found=False)
+    #algo.optimizer1 = load_optimizer(args.model, 1, raise_not_found=False)
 else:
     save_optimizer(algo.optimizer0, args.model, 0)
     save_optimizer(algo.optimizer1, args.model, 1)
