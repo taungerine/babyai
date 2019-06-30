@@ -123,7 +123,9 @@ def worker(conn, env):
         cmd, data = conn.recv()
         if cmd == "step":
             obs, reward, done, info = env.step(data)
-            if done or 64 <= env.step_count:
+            if 64 <= env.step_count:
+                done = True
+            if done:
                 obs = env.reset()
             globs = obs.copy()
             obs['image']   = get_local(obs)
@@ -180,7 +182,9 @@ class ParallelEnv(gym.Env):
                 local.send(("step", action))
         if not scouting[0]:
             obs, reward, done, info = self.envs[0].step(actions[0])
-            if done or 64 <= self.envs[0].step_count:
+            if 64 <= self.envs[0].step_count:
+                done = True
+            if done:
                 obs = self.envs[0].reset()
             globs = obs.copy()
             obs['image']   = get_local(obs)
