@@ -735,5 +735,197 @@ class Level_GoToObjBig(RoomGridLevel):
         self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
 
 
+class Level_GoToObjCustomRichA(RoomGridLevel):
+    """
+        A richer form of GoToObj
+        """
+    
+    def __init__(self, seed=None):
+        super().__init__(
+                         num_rows=2,
+                         num_cols=2,
+                         room_size=8,
+                         max_steps=64,
+                         seed=seed
+                         )
+    
+    def gen_mission(self):
+        q = 1
+        
+        door_colors = self._rand_subset(COLOR_NAMES, q)
+        
+        for i in range(q):
+            # Add a door of color i connecting starting room to another room
+            self.add_door(0, 0, door_idx=i, color=door_colors[i], locked=False)
+            
+            # Add a key of color i in the starting room
+            #self.add_object(0, 0, kind="key", color=door_colors[i])
+        
+        obj_kinds  = []
+        obj_colors = []
+        
+        for i in range(q):
+            obj_kinds.append(self._rand_elem(["ball", "box"]))
+            obj_colors.append(self._rand_color())
+        
+        objs = []
+        
+        obj, _ = self.add_object(1, 0, kind=obj_kinds[0],  color=obj_colors[0])
+        objs.append(obj)
+        #obj, _ = self.add_object(0, 1, kind=obj_kinds[1],  color=obj_colors[1])
+        #objs.append(obj)
+        
+        self.place_agent(0, 0)
+        
+        obj = self._rand_elem(objs)
+        
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
+
+
+class Level_GoToObjCustomRichB(RoomGridLevel):
+    """
+        A richer form of GoToObj
+        """
+    
+    def __init__(self, seed=None):
+        super().__init__(
+                         num_rows=2,
+                         num_cols=2,
+                         room_size=8,
+                         max_steps=64,
+                         seed=seed
+                         )
+    
+    def gen_mission(self):
+        q = 1
+        
+        door_colors = self._rand_subset(COLOR_NAMES, q)
+        
+        for i in range(q):
+            # Add a door of color i connecting starting room to another room
+            self.add_door(0, 0, door_idx=i, color=door_colors[i], locked=True)
+            
+            # Add a key of color i in the starting room
+            self.add_object(0, 0, kind="key", color=door_colors[i])
+        
+        obj_kinds  = []
+        obj_colors = []
+        
+        for i in range(q):
+            obj_kinds.append(self._rand_elem(["ball", "box"]))
+            obj_colors.append(self._rand_color())
+        
+        objs = []
+        
+        obj, _ = self.add_object(1, 0, kind=obj_kinds[0],  color=obj_colors[0])
+        objs.append(obj)
+        #obj, _ = self.add_object(0, 1, kind=obj_kinds[1],  color=obj_colors[1])
+        #objs.append(obj)
+        
+        self.place_agent(0, 0)
+        
+        obj = self._rand_elem(objs)
+        
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
+
+
+class Level_GoToObjCustomRichC(RoomGridLevel):
+    """
+        A richer form of GoToObj
+        """
+    
+    def __init__(self, seed=None):
+        super().__init__(
+                         num_rows=2,
+                         num_cols=2,
+                         room_size=8,
+                         max_steps=64,
+                         seed=seed
+                         )
+    
+    def gen_mission(self):
+        q = 2
+        
+        door_colors = self._rand_subset(COLOR_NAMES, q)
+        
+        for i in range(q):
+            # Add a door of color i connecting starting room to another room
+            self.add_door(0, 0, door_idx=i, color=door_colors[i], locked=True)
+            
+            # Add a key of color i in the starting room
+            self.add_object(0, 0, kind="key", color=door_colors[i])
+        
+        obj_kinds  = []
+        obj_colors = []
+        
+        for i in range(q):
+            obj_kinds.append(self._rand_elem(["ball", "box"]))
+            obj_colors.append(self._rand_color())
+        
+        objs = []
+        
+        obj, _ = self.add_object(1, 0, kind=obj_kinds[0],  color=obj_colors[0])
+        objs.append(obj)
+        obj, _ = self.add_object(0, 1, kind=obj_kinds[1],  color=obj_colors[1])
+        objs.append(obj)
+        
+        self.place_agent(0, 0)
+        
+        obj = self._rand_elem(objs)
+        
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
+
+
+class Level_GoToObjCustomRichD(RoomGridLevel):
+    """
+        A richer form of GoToObj
+        """
+    
+    def __init__(self, seed=None):
+        super().__init__(
+                         num_rows=2,
+                         num_cols=2,
+                         room_size=8,
+                         max_steps=64,
+                         seed=seed
+                         )
+    
+    def gen_mission(self):
+        q = 2
+        
+        door_colors = self._rand_subset(COLOR_NAMES, q)
+        
+        for i in range(q):
+            # Add a door of color i connecting starting room to another room
+            self.add_door(0, 0, door_idx=i, color=door_colors[i], locked=True)
+            
+            # Add a key of color i in the starting room
+            self.add_object(0, 0, kind="key", color=door_colors[i])
+        
+        obj_kinds  = []
+        obj_colors = []
+        
+        for i in range(4):
+            obj_kinds.append(self._rand_elem(["ball", "box"]))
+            obj_colors.append(self._rand_color())
+        
+        objs = []
+        
+        obj, _ = self.add_object(1, 0, kind=obj_kinds[0],  color=obj_colors[0])
+        objs.append(obj)
+        obj, _ = self.add_object(1, 0, kind=obj_kinds[1],  color=obj_colors[1])
+        objs.append(obj)
+        obj, _ = self.add_object(0, 1, kind=obj_kinds[2],  color=obj_colors[2])
+        objs.append(obj)
+        obj, _ = self.add_object(0, 1, kind=obj_kinds[3],  color=obj_colors[3])
+        objs.append(obj)
+        
+        self.place_agent(0, 0)
+        
+        obj = self._rand_elem(objs)
+        
+        self.instrs = GoToInstr(ObjDesc(obj.type, obj.color))
+
+
 # Register the levels in this file
 register_levels(__name__, globals())
