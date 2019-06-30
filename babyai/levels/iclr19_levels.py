@@ -744,7 +744,7 @@ class Level_GoToObjCustomRichA(RoomGridLevel):
         super().__init__(
                          num_rows=2,
                          num_cols=2,
-                         room_size=8,
+                         room_size=5,
                          max_steps=64,
                          seed=seed
                          )
@@ -791,7 +791,7 @@ class Level_GoToObjCustomRichB(RoomGridLevel):
         super().__init__(
                          num_rows=2,
                          num_cols=2,
-                         room_size=8,
+                         room_size=5,
                          max_steps=64,
                          seed=seed
                          )
@@ -838,7 +838,7 @@ class Level_GoToObjCustomRichC(RoomGridLevel):
         super().__init__(
                          num_rows=2,
                          num_cols=2,
-                         room_size=8,
+                         room_size=5,
                          max_steps=64,
                          seed=seed
                          )
@@ -885,7 +885,7 @@ class Level_GoToObjCustomRichD(RoomGridLevel):
         super().__init__(
                          num_rows=2,
                          num_cols=2,
-                         room_size=8,
+                         room_size=5,
                          max_steps=64,
                          seed=seed
                          )
