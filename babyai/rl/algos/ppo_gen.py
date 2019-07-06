@@ -59,9 +59,9 @@ class PPOAlgo(BaseAlgo):
         '''
         
         if self.update == 0:
-            self.objs = ((4 < exps.globs[0].image[:, :, 0].numpy()) * (exps.globs[0].image[:, :, 0].numpy() < 8)).sum()
+            self.objs = ((3 < exps.globs[0].image[:, :, 0].numpy()) * (exps.globs[0].image[:, :, 0].numpy() < 8)).sum()
         
-        data = torch.zeros(self.num_frames, 4 + self.acmodel0.max_len_msg + 3 + 4 * self.objs, dtype=torch.uint8)
+        data = torch.zeros(self.num_frames, 4 + self.acmodel0.max_len_msg + 3 + 5 * self.objs, dtype=torch.uint8)
         
         k     = 0
         k_max = 0
@@ -88,36 +88,39 @@ class PPOAlgo(BaseAlgo):
                     data[k, 3]    = exps.goal_color[index]
                     
                     # message
-                    data[k, 4:12] = exps.message[index].argmax(-1)
+                    data[k, 4:4+self.acmodel0.max_len_msg] = exps.message[index].argmax(-1)
                     
                     # agent action
-                    data[k, 12]   = exps.action[index]
+                    data[k, 4+self.acmodel0.max_len_msg]   = exps.action[index]
                     
                     # new episode
-                    data[k, 13]   = 1 - exps.mask1[index]
+                    data[k, 4+self.acmodel0.max_len_msg+1]   = 1 - exps.mask1[index]
                     
                     # success
-                    data[k, 14]   = math.ceil(exps.reward[index].clamp(0, 1).item())
+                    data[k, 4+self.acmodel0.max_len_msg+2]   = math.ceil(exps.reward[index].clamp(0, 1).item())
                     
-                    globs = exps.globs[index].image[:, :, :2].numpy()
-                    x, y = ((4 < globs[:, :, 0]) * (globs[:, :, 0] < 8)).nonzero()
+                    globs = exps.globs[index].image[:, :, :].numpy()
+                    x, y = ((3 < globs[:, :, 0]) * (globs[:, :, 0] < 8) + (13 < globs[:, :, 0]) * (globs[:, :, 0] < 18)).nonzero()
                     
                     for b in range(self.objs):
                         if b < len(x):
                             # object x coordinate
-                            data[k, 15 + 4*b    ] = x[b].item()
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b    ] = x[b].item()
                             
                             # object y coordinate
-                            data[k, 15 + 4*b + 1] = y[b].item()
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b + 1] = y[b].item()
                             
                             # object type
-                            data[k, 15 + 4*b + 2] = globs[x[b], y[b], 0].item()
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b + 2] = globs[x[b], y[b], 0].item() % 10
                             
                             # object color
-                            data[k, 15 + 4*b + 3] = globs[x[b], y[b], 1].item()
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b + 3] = globs[x[b], y[b], 1].item()
+                        
+                            # object lockedness
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b + 4] = globs[x[b], y[b], 2].item()
                         
                         else:
-                            data[k, 15 + 4*b:15 + 4*b + 4] = torch.zeros(4)
+                            data[k, 4+self.acmodel0.max_len_msg+3 + 5*b:4+self.acmodel0.max_len_msg+3 + 5*b + 5] = torch.zeros(5)
                     
                     k += 1
     
