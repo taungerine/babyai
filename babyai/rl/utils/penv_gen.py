@@ -3,7 +3,7 @@ import gym
 import numpy as np
 import math
 
-def get_global(env):
+def get_global(env, local_obs):
     # get global view
     grid = env.grid
     
@@ -23,7 +23,10 @@ def get_global(env):
     
     # encode image for model
     image = grid.encode()
-
+    
+    # overlap global with local observation, i.e., include carried objects
+    image[x, y, :] = local_obs['image'][3, 6, :]
+    
     # indicate position of agent
     image[x, y, 0] += 10
     
@@ -128,8 +131,8 @@ def worker(conn, env):
             if done:
                 obs = env.reset()
             globs = obs.copy()
+            globs['image'] = get_global(env, obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(env)
             step_count = env.step_count
             agent_loc_x, agent_loc_y = get_agent_loc(env)
             goal_type, goal_color = get_goal(env)
@@ -137,8 +140,8 @@ def worker(conn, env):
         elif cmd == "reset":
             obs = env.reset()
             globs = obs.copy()
+            globs['image'] = get_global(env, obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(env)
             agent_loc_x, agent_loc_y = get_agent_loc(env)
             goal_type, goal_color = get_goal(env)
             conn.send((globs, obs, 0.0, False, 0, agent_loc_x, agent_loc_y, goal_type, goal_color))
@@ -169,8 +172,8 @@ class ParallelEnv(gym.Env):
             local.send(("reset", None))
         obs = self.envs[0].reset()
         globs = obs.copy()
+        globs['image'] = get_global(self.envs[0], obs)
         obs['image']   = get_local(obs)
-        globs['image'] = get_global(self.envs[0])
         agent_loc_x, agent_loc_y = get_agent_loc(self.envs[0])
         goal_type, goal_color = get_goal(self.envs[0])
         self.results = [(globs, obs, 0.0, False, 0, agent_loc_x, agent_loc_y, goal_type, goal_color)] + [local.recv() for local in self.locals]
@@ -187,8 +190,8 @@ class ParallelEnv(gym.Env):
             if done:
                 obs = self.envs[0].reset()
             globs = obs.copy()
+            globs['image'] = get_global(self.envs[0], obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(self.envs[0])
             step_count = self.envs[0].step_count
             agent_loc_x, agent_loc_y = get_agent_loc(self.envs[0])
             goal_type, goal_color = get_goal(self.envs[0])

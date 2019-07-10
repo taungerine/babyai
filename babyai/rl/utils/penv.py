@@ -3,7 +3,7 @@ import gym
 import numpy as np
 import math
 
-def get_global(env):
+def get_global(env, local_obs):
     # get global view
     grid = env.grid
     
@@ -23,6 +23,9 @@ def get_global(env):
     
     # encode image for model
     image = grid.encode()
+
+    # overlap global with local observation, i.e., include carried objects
+    image[x, y, :] = local_obs['image'][3, 6, :]
 
     # indicate position of agent
     image[x, y, 0] += 10
@@ -55,15 +58,15 @@ def worker(conn, env):
             if done:
                 obs = env.reset()
             globs = obs.copy()
+            globs['image'] = get_global(env, obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(env)
             step_count = env.step_count
             conn.send((globs, obs, reward, done, step_count))
         elif cmd == "reset":
             obs = env.reset()
             globs = obs.copy()
+            globs['image'] = get_global(env, obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(env)
             conn.send((globs, obs, 0.0, False, 0))
         else:
             raise NotImplementedError
@@ -92,8 +95,8 @@ class ParallelEnv(gym.Env):
             local.send(("reset", None))
         obs = self.envs[0].reset()
         globs = obs.copy()
+        globs['image'] = get_global(self.envs[0], obs)
         obs['image']   = get_local(obs)
-        globs['image'] = get_global(self.envs[0])
         self.results = [(globs, obs, 0.0, False, 0)] + [local.recv() for local in self.locals]
         return zip(*adapt(self.results, scouting))
 
@@ -108,8 +111,8 @@ class ParallelEnv(gym.Env):
             if done:
                 obs = self.envs[0].reset()
             globs = obs.copy()
+            globs['image'] = get_global(self.envs[0], obs)
             obs['image']   = get_local(obs)
-            globs['image'] = get_global(self.envs[0])
             step_count = self.envs[0].step_count
             self.results[0] = (globs, obs, reward, done, step_count)
         for i in range(len(self.envs)-1):
